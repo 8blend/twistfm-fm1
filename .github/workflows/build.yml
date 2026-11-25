@@ -28,7 +28,7 @@ jobs:
             cp screen-home.png docs/img/
           fi
           # parole per il lettore di schermo: sempre con l'indirizzo dove vengono pubblicate
-          printf '# url: https://8blend.github.io/twistfm-fm1/words/\nTWISTFM\ttwist f m\nHOME\thome\nEDIT\tedit\nFILTRO\tfilter\nGLOBAL\tglobal\n' > app/words.tsv
+          printf '# url: https://8blend.github.io/twistfm-fm1/words/\nTWISTER\ttwister\nHOME\thome\nEDIT\tedit\nFILTRO\tfilter\nGLOBAL\tglobal\n' > app/words.tsv
           find app docs -type f | sort
 
       - name: Scarica fm1-base (piattaforma) e felucca-bsp (hardware)
@@ -75,7 +75,8 @@ jobs:
             : > app/build/emu/app.wasm
             echo "<p>Simulatore non disponibile in questa versione.</p>" > app/build/emu/index.html
           fi
-          python3 fm1-base/tools/make_site.py app "app/build/twistfm-$VERSION.fwsc" "$VERSION" site
+          PKG=$(ls app/build/*-"$VERSION".fwsc | head -1)
+          python3 fm1-base/tools/make_site.py app "$PKG" "$VERSION" site
           ls -la site site/install
 
       - name: Prepara i file da scaricare
@@ -91,7 +92,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: twistfm-firmware
+          name: twister-firmware
           path: out/
 
       - name: Prepara la pubblicazione del sito
