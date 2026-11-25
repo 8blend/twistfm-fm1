@@ -987,9 +987,13 @@ static int draw_algo(tfm_ui *u, int y)
 
 static void draw_home(tfm_ui *u)
 {
-    char num[8] = "P01/05";
-    num[1] = (char)('0' + (u->preset + 1) / 10); num[2] = (char)('0' + (u->preset + 1) % 10);
-    num[4] = (char)('0' + TFM_PRESET_COUNT / 10); num[5] = (char)('0' + TFM_PRESET_COUNT % 10);
+    char num[12] = "P";
+    num_text(num + 1, u->preset + 1u);   /* P7/128 */
+    {
+        unsigned l = (unsigned)tfm_strlen(num);
+        num[l] = '/';
+        num_text(num + l + 1, TFM_PRESET_COUNT);
+    }
     if (u->preset >= TFM_PRESET_COUNT) {   /* preset utente */
         unsigned s = u->preset - TFM_PRESET_COUNT + 1u;
         num[0] = 'U'; num[1] = (char)('0' + s / 10); num[2] = (char)('0' + s % 10); num[3] = 0;
