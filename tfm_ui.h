@@ -63,7 +63,8 @@ unsigned tfm_ui_preset_count(void);
 const tfm_seq *tfm_ui_seq(const tfm_ui *u);
 const tfm_settings *tfm_ui_settings(const tfm_ui *u);
 void tfm_ui_settings_load(tfm_ui *u, const tfm_settings *s);
-void tfm_ui_set_bpm(tfm_ui *u, unsigned bpm);   /* tfm_bpm_now() del motore */
+void tfm_ui_set_bpm(tfm_ui *u, unsigned bpm);
+void tfm_ui_set_cpu(tfm_ui *u, unsigned pct);   /* carico audio in % (plat_cpu_pct) */   /* tfm_bpm_now() del motore */
 int tfm_ui_playing(const tfm_ui *u);
 void tfm_ui_set_play_state(tfm_ui *u, unsigned state);   /* tfm_play_state() del motore */
 unsigned tfm_ui_user_blob(const tfm_ui *u, unsigned slot, uint8_t *buf, unsigned max);   /* byte da salvare, 0 = vuoto */

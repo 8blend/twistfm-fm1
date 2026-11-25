@@ -8,6 +8,9 @@ o2_cflags = ["-DTFM_UI_BYTESWAP", "-DTFM_UI_NO_FRAMEBUFFER"]
 words = "words.tsv"
 ble = false                        # Bluetooth spento: la memoria resta al suono
 companion = false
+cpu2 = true                        # secondo core: meta' delle voci
+cpu2_fallback = true               # se il secondo core si blocca, si continua su uno solo (niente riavvii)
+cpu2_stack = 4096
 # per il sito e firmware.json
 tagline = "an OPL3-style FM synth inspired by the TwistFM"
 licence = "GPL-3.0-only"

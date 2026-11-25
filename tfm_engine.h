@@ -139,7 +139,10 @@ void tfm_pitch_bend(tfm_engine *e, int norm_q16);
 void tfm_set_sync(tfm_engine *e, int ext);
 void tfm_midi_clock(tfm_engine *e);
 unsigned tfm_clock_out(tfm_engine *e);
-unsigned tfm_bpm_now(const tfm_engine *e);   /* BPM in uso (con il clock esterno: misurato) */
+unsigned tfm_bpm_now(const tfm_engine *e);
+/* due core: begin() affida tfm_parallel_job al secondo core (1 = preso), end() lo aspetta (0 = fatto) */
+void tfm_set_parallel(tfm_engine *e, int (*begin)(void), int (*end)(void));
+void tfm_parallel_job(uint32_t arg);   /* BPM in uso (con il clock esterno: misurato) */
 /* sequencer: un passo, tutti i passi, avvio/arresto; stato = passo | in corsa << 8 | arp attivo << 9 */
 void tfm_set_step(tfm_engine *e, unsigned step, uint8_t note, uint8_t gate);
 void tfm_load_seq(tfm_engine *e, const tfm_seq *s);

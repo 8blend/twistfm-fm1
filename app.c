@@ -128,6 +128,11 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
 
 void app_panic(void) { panic_req = 1; }
 
+/* ---------------------------------------------------------------- due core --- */
+/* il motore divide le voci: le pari sul primo core, le dispari sul secondo (tfm_parallel_job) */
+static int cpu2_begin(void) { return plat_cpu2_on() && plat_cpu2_run(tfm_parallel_job, 0); }
+static int cpu2_end(void) { return plat_cpu2_wait(); }
+
 /* -------------------------------------------------------------------- avvio --- */
 void app_init(void)
 {
@@ -136,6 +141,8 @@ void app_init(void)
         return;
     E = tfm_engine_init(eng_mem);
     U = tfm_ui_init(ui_mem);
+    if (plat_cpu2_set(1) == 0)                 /* secondo core: meta' delle voci (se non parte, tutto su uno) */
+        tfm_set_parallel(E, cpu2_begin, cpu2_end);
     {   /* i preset utente salvati (U01..U16) */
         static uint8_t buf[TFM_USER_BLOB_MAX];
         uint32_t s;
@@ -272,6 +279,7 @@ static void input(void)
     forward_events();
     tfm_ui_set_play_state(U, tfm_play_state(E));   /* passo del sequencer per lo schermo */
     tfm_ui_set_bpm(U, tfm_bpm_now(E));
+    tfm_ui_set_cpu(U, plat_cpu_pct() ? plat_cpu_pct() : 1u);
     if (set_due && (int32_t)(plat_ms() - set_due) >= 0) {   /* impostazioni MIDI in flash, a bocce ferme */
         set_due = 0;
         plat_store_save(OBJ_SETTINGS, tfm_ui_settings(U), sizeof(tfm_settings));

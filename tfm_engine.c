@@ -20,6 +20,7 @@ typedef struct {
     int16_t out, prev;     /* uscita (per modulazione/feedback) */
     uint8_t stage, wave;
     uint8_t ar, dr, rr;    /* rate effettivi 0..63 */
+    uint8_t silent;        /* volume 0: non si calcola */
 } tfm_op;
 
 /* Uscita di un operatore come nel chip: logsin + attenuazione -> exp. */
@@ -96,6 +97,7 @@ static TFM_DSP_CODE inline unsigned op_env(tfm_op *o)
 
 static TFM_DSP_CODE inline int16_t op_calc(tfm_op *o, int mod)
 {
+    if (o->silent) return 0;   /* operatore spento: niente calcolo */
     unsigned env = op_env(o);
     int16_t out = op_wave((o->phase >> 22) + (unsigned)mod, o->wave, env);
     o->phase += o->inc;
@@ -243,6 +245,8 @@ typedef struct {
     tfm_adsr menv;    /* inviluppo di modulazione */
     float pitch_cur;  /* nota che suona ora (glide), in semitoni */
     float rise_off, fall_off;   /* scostamenti di pitch di Rise e Fall */
+    float setup_pitch;          /* pitch e versione dei parametri dell'ultimo voice_setup_ops */
+    uint32_t setup_ver;
 } tfm_voice;
 
 struct tfm_engine {
@@ -277,6 +281,8 @@ struct tfm_engine {
     unsigned clk_out;
     float ext_beats, ext_bpm, clk_ph;
     uint32_t ext_samples;
+    int (*par_begin)(void), (*par_end)(void);   /* secondo core (tfm_set_parallel) */
+    uint32_t ver;              /* cresce a ogni parametro cambiato */
 };
 
 unsigned tfm_engine_size(void) { return (sizeof(tfm_engine) + 7u) & ~7u; }
@@ -343,6 +349,8 @@ static void voice_setup_ops(tfm_voice *v, int retrigger, const uint8_t *p, float
         unsigned velatt = (127u - v->vel) * kvs * 192u / 1270u;
         unsigned att = (tl << 2) + ((unsigned)ksl >> ksl_shift[kslv]) + velatt;
         o->att = (uint16_t)(att > 511 || q[TFM_OPP_VOL] == 0 ? 511 : att);
+        o->silent = q[TFM_OPP_VOL] == 0;
+        if (o->silent) { o->out = o->prev = 0; }
         if (retrigger) {
             o->stage = EG_ATTACK;
             if (o->ar == 0) o->stage = EG_DECAY; /* attack rate 0: niente attacco */
@@ -518,7 +526,7 @@ tfm_engine *tfm_engine_init(void *memory)
     return e;
 }
 
-void tfm_load_patch(tfm_engine *e, const tfm_patch *patch) { e->patch = *patch; e->dirty = 1; }
+void tfm_load_patch(tfm_engine *e, const tfm_patch *patch) { e->patch = *patch; e->dirty = 1; e->ver++; }
 void tfm_set_param(tfm_engine *e, unsigned id, uint8_t value)
 {
     if (id >= TFM_P_COUNT) return;
@@ -541,6 +549,7 @@ void tfm_set_param(tfm_engine *e, unsigned id, uint8_t value)
         e->arp_open = 0;
     }
     e->patch.p[id] = value;
+    e->ver++;
     e->dirty = 1;
 }
 uint8_t tfm_get_param(const tfm_engine *e, unsigned id) { return id < TFM_P_COUNT ? e->patch.p[id] : 0; }
@@ -626,7 +635,7 @@ static voice_layout layout_of(const tfm_engine *e)
 {
     voice_layout l = { 1, voices_of(e) };
     switch (mode_of(e)) {
-    case 1: l.group = 8; l.slots = 1; break;
+    case 1: l.group = voices_of(e); l.slots = 1; break;   /* UNIS: quante voci all'unisono (VOICES) */
     case 2: l.group = 2; l.slots = 4; break;
     case 3: l.group = 4; l.slots = 2; break;
     case 4: l.group = 2; l.slots = 1; break;
@@ -1147,6 +1156,111 @@ static inline void acc_apply(const mod_acc *m, uint8_t *eff)
 }
 static inline int link_amt(const uint8_t *p, unsigned id) { return (int)p[id + 1] - TFM_AMT_ZERO; }
 
+/* contesto di un sotto-blocco per le voci: lo stesso per i due core */
+typedef struct {
+    const uint8_t *p, *eff;
+    const float *mixc;
+    float pitch, bend, kt, gl_c, rise_c, fall_c, fall_to, gl, gr;
+    unsigned algo, algo2, n;
+    int menv_on, modded;
+    uint32_t ver;
+    uint8_t ms20;
+} voice_ctx;
+
+/* Le voci first, first+step, ... di un sotto-blocco, sommate in out (n frame stereo). */
+static void render_voices(tfm_engine *e, const voice_ctx *c, unsigned first, unsigned step, int32_t *out)
+{
+    const uint8_t *p = c->p, *eff = c->eff;
+    const float *mixc = c->mixc;
+    unsigned algo = c->algo, algo2 = c->algo2, n = c->n;
+    int menv_on = c->menv_on;
+    uint8_t ms20 = c->ms20;
+    float kt = c->kt, bend = c->bend, gl_c = c->gl_c, rise_c = c->rise_c, fall_c = c->fall_c, fall_to = c->fall_to;
+    float gl = c->gl, gr = c->gr;
+    uint8_t veff[TFM_P_COUNT];      /* parametri di una voce (inviluppo di modulazione) */
+    struct { float pitch; } g = { c->pitch };
+for (unsigned vi = first; vi < TFM_VOICES; vi += step) {
+        tfm_voice *v = &e->v[vi];
+        if (v->note < 0) continue;
+        if (!v->gate && voice_silent(v, algo, algo2)) { v->note = -1; continue; }
+        const uint8_t *pv = eff;
+        float pitch = g.pitch;
+        if (menv_on) {   /* inviluppo di modulazione della voce */
+            float m = adsr_step(&v->menv, p[TFM_P_MENV_A], p[TFM_P_MENV_D], p[TFM_P_MENV_S], p[TFM_P_MENV_R], n);
+            mod_acc mv = { {0}, {0}, 0, 0.f };
+            for (unsigned i = 0; i < TFM_LINKS; i++)
+                acc_add(&mv, p[TFM_MENV_LINK(i)], link_amt(p, TFM_MENV_LINK(i)), m);
+            tfm_memcpy(veff, eff, TFM_P_COUNT);
+            acc_apply(&mv, veff);
+            pv = veff;
+            pitch += mv.pitch;
+        }
+        /* glide, rise, fall */
+        v->pitch_cur += ((float)v->note - v->pitch_cur) * gl_c;
+        v->rise_off -= v->rise_off * rise_c;
+        if (!v->gate && p[TFM_P_FALL]) v->fall_off += (fall_to - v->fall_off) * fall_c;
+        {   /* si ricalcola solo se qualcosa e' cambiato (pitch, parametri, modulazioni) */
+            float pt = v->pitch_cur + v->detune + bend + pitch + v->rise_off + v->fall_off;
+            float dp = pt - v->setup_pitch;
+            if (c->modded || pv != eff || v->setup_ver != c->ver || dp > 0.0001f || dp < -0.0001f) {
+                voice_setup_ops(v, 0, pv, pt);
+                v->setup_pitch = pt;
+                v->setup_ver = c->ver;
+            }
+        }
+
+        /* filtro della voce: base + inviluppo + keytracking (con i parametri modulati) */
+        flt_ctl fc;
+        fc.ms20 = ms20;
+        float res = (float)pv[TFM_P_RES] * (1.f / 127.f);
+        fc.k = ms20 ? res * 5.6f : res * 4.05f;   /* MS20 va oltre l'autooscillazione */
+        float heat = (float)pv[TFM_P_HEAT] * (1.f / 127.f);
+        fc.drive = 0.35f + heat * heat * 6.f;
+        fc.makeup = 1.f / (fc.drive < 1.f ? 0.35f + 0.65f * fc.drive : 1.f + 0.25f * (fc.drive - 1.f));
+        fc.wobble = (float)pv[TFM_P_WOBBLE] * (2.f / 127.f);
+        fc.mix = mixc;
+        float lvl = adsr_step(&v->fenv, p[TFM_P_FLT_A], p[TFM_P_FLT_D], p[TFM_P_FLT_S], p[TFM_P_FLT_R], n);
+        float oct = (float)pv[TFM_P_CUTOFF] * (10.f / 127.f) + (float)pv[TFM_P_FLT_ENV] * (8.f / 127.f) * lvl
+                  + kt * ((float)v->note - 12.f) * (1.f / 12.f);
+        float hz = 20.f * tfm_exp2f(oct);
+        float fn = tfm_clampf(hz * (1.f / (float)TFM_SAMPLE_RATE), 0.0002f, 0.45f);
+        float gg = tfm_prewarp(fn);
+        float G1 = gg / (1.f + gg);
+        float G = v->g_prev > 0.f ? v->g_prev : G1;
+        float dG = (G1 - G) / (float)n;
+        v->g_prev = G1;
+        unsigned fb1 = f_to(pv[TFM_P_FB1], 8), fb2 = f_to(pv[TFM_P_FB2], 8);
+        float vol = (float)pv[TFM_P_VOLUME] * (1.f / 127.f);
+        float master = vol * vol * 8388607.f * 0.28f;
+        /* voci dispari a sinistra, pari a destra (come OUT1/OUT2), con spread e tremolo */
+        float pl = (1.f - v->pan) * v->gain * gl, pr = v->pan * v->gain * gr;
+        for (unsigned s = 0; s < n; s++) {
+            float x = (float)yac512(voice_fm(v, algo, fb1, algo2, fb2)) * (1.f / 4096.f);
+            float y = flt_process(&v->flt, &fc, G, x) * master;
+            G += dG;
+            out[s * 2] += (int32_t)(y * pl);
+            out[s * 2 + 1] += (int32_t)(y * pr);
+        }
+    }
+}
+
+/* secondo core: le voci dispari nel suo buffer */
+static tfm_engine *par_e;
+static voice_ctx par_ctx;
+static int32_t par_out[2 * 32];
+void tfm_parallel_job(uint32_t arg)
+{
+    (void)arg;
+    tfm_memset(par_out, 0, sizeof par_out);
+    render_voices(par_e, &par_ctx, 1, 2, par_out);
+}
+void tfm_set_parallel(tfm_engine *e, int (*begin)(void), int (*end)(void))
+{
+    par_e = e;
+    e->par_begin = begin;
+    e->par_end = end;
+}
+
 #define TFM_SUB 32u /* sotto-blocco per i controlli */
 
 void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
@@ -1171,7 +1285,6 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
     float fall_to = -(float)p[TFM_P_FALL] * (24.f / 127.f);
 
     uint8_t eff[TFM_P_COUNT];       /* parametri con le modulazioni globali (LFO) */
-    uint8_t veff[TFM_P_COUNT];      /* e quelli di una voce (inviluppo di modulazione) */
     float gl = 1.f, gr = 1.f;       /* tremolo */
 
     tfm_memset(output, 0, frames * 2 * sizeof(int32_t));
@@ -1222,59 +1335,16 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
         tfm_memcpy(eff, p, TFM_P_COUNT);
         acc_apply(&g, eff);
 
-        for (unsigned vi = 0; vi < TFM_VOICES; vi++) {
-            tfm_voice *v = &e->v[vi];
-            if (v->note < 0) continue;
-            if (!v->gate && voice_silent(v, algo, algo2)) { v->note = -1; continue; }
-            const uint8_t *pv = eff;
-            float pitch = g.pitch;
-            if (menv_on) {   /* inviluppo di modulazione della voce */
-                float m = adsr_step(&v->menv, p[TFM_P_MENV_A], p[TFM_P_MENV_D], p[TFM_P_MENV_S], p[TFM_P_MENV_R], n);
-                mod_acc mv = { {0}, {0}, 0, 0.f };
-                for (unsigned i = 0; i < TFM_LINKS; i++)
-                    acc_add(&mv, p[TFM_MENV_LINK(i)], link_amt(p, TFM_MENV_LINK(i)), m);
-                tfm_memcpy(veff, eff, TFM_P_COUNT);
-                acc_apply(&mv, veff);
-                pv = veff;
-                pitch += mv.pitch;
-            }
-            /* glide, rise, fall */
-            v->pitch_cur += ((float)v->note - v->pitch_cur) * gl_c;
-            v->rise_off -= v->rise_off * rise_c;
-            if (!v->gate && p[TFM_P_FALL]) v->fall_off += (fall_to - v->fall_off) * fall_c;
-            voice_setup_ops(v, 0, pv, v->pitch_cur + v->detune + bend + pitch + v->rise_off + v->fall_off);
-
-            /* filtro della voce: base + inviluppo + keytracking (con i parametri modulati) */
-            flt_ctl fc;
-            fc.ms20 = ms20;
-            float res = (float)pv[TFM_P_RES] * (1.f / 127.f);
-            fc.k = ms20 ? res * 5.6f : res * 4.05f;   /* MS20 va oltre l'autooscillazione */
-            float heat = (float)pv[TFM_P_HEAT] * (1.f / 127.f);
-            fc.drive = 0.35f + heat * heat * 6.f;
-            fc.makeup = 1.f / (fc.drive < 1.f ? 0.35f + 0.65f * fc.drive : 1.f + 0.25f * (fc.drive - 1.f));
-            fc.wobble = (float)pv[TFM_P_WOBBLE] * (2.f / 127.f);
-            fc.mix = mixc;
-            float lvl = adsr_step(&v->fenv, p[TFM_P_FLT_A], p[TFM_P_FLT_D], p[TFM_P_FLT_S], p[TFM_P_FLT_R], n);
-            float oct = (float)pv[TFM_P_CUTOFF] * (10.f / 127.f) + (float)pv[TFM_P_FLT_ENV] * (8.f / 127.f) * lvl
-                      + kt * ((float)v->note - 12.f) * (1.f / 12.f);
-            float hz = 20.f * tfm_exp2f(oct);
-            float fn = tfm_clampf(hz * (1.f / (float)TFM_SAMPLE_RATE), 0.0002f, 0.45f);
-            float gg = tfm_prewarp(fn);
-            float G1 = gg / (1.f + gg);
-            float G = v->g_prev > 0.f ? v->g_prev : G1;
-            float dG = (G1 - G) / (float)n;
-            v->g_prev = G1;
-            unsigned fb1 = f_to(pv[TFM_P_FB1], 8), fb2 = f_to(pv[TFM_P_FB2], 8);
-            float vol = (float)pv[TFM_P_VOLUME] * (1.f / 127.f);
-            float master = vol * vol * 8388607.f * 0.28f;
-            /* voci dispari a sinistra, pari a destra (come OUT1/OUT2), con spread e tremolo */
-            float pl = (1.f - v->pan) * v->gain * gl, pr = v->pan * v->gain * gr;
-            for (unsigned s = 0; s < n; s++) {
-                float x = (float)yac512(voice_fm(v, algo, fb1, algo2, fb2)) * (1.f / 4096.f);
-                float y = flt_process(&v->flt, &fc, G, x) * master;
-                G += dG;
-                out[s * 2] += (int32_t)(y * pl);
-                out[s * 2 + 1] += (int32_t)(y * pr);
+        {   /* le voci: con due core, pari qui e dispari sul secondo */
+            voice_ctx c = { p, eff, mixc, g.pitch, bend, kt, gl_c, rise_c, fall_c, fall_to, gl, gr, algo, algo2, n, menv_on, g.n > 0, e->ver, ms20 };
+            if (e->par_begin && n <= 32) {
+                par_ctx = c;
+                int on2 = e->par_begin();
+                render_voices(e, &c, 0, 2, out);
+                if (!on2 || e->par_end() != 0) tfm_parallel_job(0);   /* non l'ha preso: lo si fa qui */
+                for (unsigned s = 0; s < 2 * n; s++) out[s] += par_out[s];
+            } else {
+                render_voices(e, &c, 0, 1, out);
             }
         }
     }

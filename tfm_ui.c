@@ -148,6 +148,7 @@ struct tfm_ui {
     tfm_settings set;          /* MIDI e clock: globali, non nel preset */
     uint8_t play_hold;
     uint16_t bpm_now;          /* BPM in uso (con il clock esterno: misurato) */
+    uint8_t cpu;               /* carico audio in %, 0 = sconosciuto */
     tfm_event q[64];
     uint8_t qh, qt;
     uint8_t section, page[S_COUNT], op, preset, info;
@@ -173,6 +174,12 @@ unsigned tfm_ui_preset_count(void) { return TFM_PRESET_COUNT; }
 const char *tfm_ui_preset_name(unsigned i) { return i < TFM_PRESET_COUNT ? tfm_presets[i].name : ""; }
 const tfm_seq *tfm_ui_seq(const tfm_ui *u) { return &u->seq; }
 const tfm_settings *tfm_ui_settings(const tfm_ui *u) { return &u->set; }
+void tfm_ui_set_cpu(tfm_ui *u, unsigned pct)
+{
+    if (pct > 199) pct = 199;
+    int d = (int)pct - (int)u->cpu;
+    if (d > 2 || d < -2) { u->cpu = (uint8_t)pct; if (u->section == S_HOME) u->dirty = 1; }
+}
 void tfm_ui_set_bpm(tfm_ui *u, unsigned bpm)
 {
     if (bpm != u->bpm_now) { u->bpm_now = (uint16_t)bpm; if (u->section == S_GLO && u->page[S_GLO] == GP_SYNC) u->dirty = 1; }
@@ -310,7 +317,7 @@ static int resolve_id(const tfm_ui *u, const pdesc *d)
     if (d->id == FB_ID) /* feedback: solo OP1 e OP5 */
         return u->op == 0 ? TFM_P_FB1 : u->op == 4 ? TFM_P_FB2 : -1;
     if (d->id & 0x100) return (int)TFM_OP_BASE(u->op) + (d->id & 0xff);
-    if (d->id == TFM_P_VOICES && !mode_is_poly(u)) return -1;  /* conta solo nei modi polifonici */
+    if (d->id == TFM_P_VOICES && !mode_is_poly(u) && mode_cur(u) != 1) return -1;  /* modi polifonici e UNIS */
     if (d->id == TFM_P_PRIO && !mode_is_mono(u)) return -1;    /* conta solo quando si suona mono */
     if (d->id == TFM_P_REV_SHIM && u->patch.p[TFM_P_REV_TYPE] != 2) return -1; /* solo LONG SHIMMER */
     return d->id;
@@ -899,10 +906,17 @@ static void draw_home(tfm_ui *u)
         char vm[24];
         unsigned m = mode_cur(u);
         tfm_strcpy(vm, L_MODE[m]);
-        if (mode_is_poly(u)) { unsigned n = (unsigned)tfm_strlen(vm); vm[n] = ' '; vm[n + 1] = (char)('0' + voices_cur(u)); vm[n + 2] = 'V'; vm[n + 3] = 0; }
+        if (mode_is_poly(u) || m == 1) { unsigned n = (unsigned)tfm_strlen(vm); vm[n] = ' '; vm[n + 1] = (char)('0' + voices_cur(u)); vm[n + 2] = 'V'; vm[n + 3] = 0; }
         x = text(u, 48, 164, vm, 1, TEXT);
     }
     text(u, x + 12, 164, "OCT", 1, DIM);
+    if (u->cpu) {   /* carico del processore audio */
+        char cs[10] = "CPU ";
+        num_text(cs + 4, u->cpu);
+        unsigned l = (unsigned)tfm_strlen(cs);
+        cs[l] = '%'; cs[l + 1] = 0;
+        text(u, 234 - text_w(cs, 1), 164, cs, 1, u->cpu > 85 ? 0xf800 : u->cpu > 65 ? AMBER : DIM);
+    }
     {
         uint8_t sl[4];
         fx_slots(u, sl);
