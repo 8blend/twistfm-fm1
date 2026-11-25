@@ -12,7 +12,7 @@
 
 /* ------------------------------------------------------------------ memoria --- */
 #define ENG_BYTES (192u * 1024u)        /* tfm_engine_size(): ~187 KB, effetti compresi */
-#define UI_BYTES (17u * 1024u)          /* tfm_ui_size() senza framebuffer: ~16 KB */
+#define UI_BYTES (26u * 1024u)          /* tfm_ui_size() senza framebuffer: ~23 KB (16 preset utente compresi) */
 static uint8_t eng_mem[ENG_BYTES] __attribute__((aligned(8))) PLAT_POOL;
 static uint8_t ui_mem[UI_BYTES] __attribute__((aligned(8))) PLAT_POOL;
 static tfm_engine *E;
@@ -20,8 +20,8 @@ static tfm_ui *U;
 static uint8_t mem_ok;
 
 /* ------------------------------------------------- coda eventi UI -> audio --- */
-enum { Q_NOTE_ON = 1, Q_NOTE_OFF, Q_PARAM, Q_ALL_OFF };
-#define QN 256u
+enum { Q_NOTE_ON = 1, Q_NOTE_OFF, Q_PARAM, Q_ALL_OFF, Q_STEP, Q_SEQ, Q_PLAY };
+#define QN 512u
 static volatile uint32_t q_buf[QN];
 static volatile uint32_t q_head, q_tail;       /* head: scrive la UI; tail: legge l'audio */
 static volatile uint8_t panic_req;
@@ -75,6 +75,12 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         else if (type == Q_NOTE_OFF) tfm_note_off(E, (uint8_t)a);
         else if (type == Q_PARAM) tfm_set_param(E, a, (uint8_t)b);
         else if (type == Q_ALL_OFF) tfm_all_notes_off(E);
+        else if (type == Q_STEP) {              /* un passo cambiato: il valore e' nella UI */
+            const tfm_seq *s = tfm_ui_seq(U);
+            tfm_set_step(E, a, s->note[a & 127u], s->gate[a & 127u]);
+        }
+        else if (type == Q_SEQ) tfm_load_seq(E, tfm_ui_seq(U));
+        else if (type == Q_PLAY) tfm_transport(E, (int)a);
         q_tail = (t + 1u) & (QN - 1u);
     }
     midi_in();
@@ -100,7 +106,16 @@ void app_init(void)
         return;
     E = tfm_engine_init(eng_mem);
     U = tfm_ui_init(ui_mem);
+    {   /* i preset utente salvati (U01..U16) */
+        static uint8_t buf[TFM_USER_BLOB_MAX];
+        uint32_t s;
+        for (s = 0; s < TFM_USER_SLOTS; s++) {
+            int n = plat_store_load(OBJ_USER0 + s, buf, sizeof buf);
+            if (n > 0) tfm_ui_user_load(U, s, buf, (unsigned)n);
+        }
+    }
     tfm_load_patch(E, tfm_ui_patch(U));        /* il preset di partenza scelto dall'interfaccia */
+    tfm_load_seq(E, tfm_ui_seq(U));
 }
 
 /* ------------------------------------------------------------------- schermo --- */
@@ -153,6 +168,8 @@ static const uint8_t ENC_MAP[NE] = { TFM_ENC_SELECT, TFM_ENC_ALGORITHM, TFM_ENC_
                                      TFM_ENC_K3, TFM_ENC_K4 };
 static uint32_t prev_keys, prev_btn;
 
+static uint8_t blob[TFM_USER_BLOB_MAX];        /* un preset utente come sta in flash */
+
 static void forward_events(void)               /* dall'interfaccia al motore (e le note anche al computer) */
 {
     tfm_event ev;
@@ -170,6 +187,18 @@ static void forward_events(void)               /* dall'interfaccia al motore (e 
             uint32_t i;
             q_push(Q_ALL_OFF, 0, 0);
             for (i = 0; i < TFM_P_COUNT; i++) q_push(Q_PARAM, i, p->p[i]);
+            q_push(Q_SEQ, 0, 0);
+        } else if (ev.type == TFM_EV_STEP) {
+            q_push(Q_STEP, ev.a, 0);
+        } else if (ev.type == TFM_EV_SEQ) {
+            q_push(Q_SEQ, 0, 0);
+        } else if (ev.type == TFM_EV_PLAY) {
+            q_push(Q_PLAY, ev.a, 0);
+        } else if (ev.type == TFM_EV_SAVE) {    /* preset utente in flash (ciclo principale: qui si puo') */
+            uint32_t n = tfm_ui_user_blob(U, ev.a, blob, sizeof blob);
+            if (!n || plat_store_save(OBJ_USER0 + ev.a, blob, n) != 0) {
+                app_say("SALVATAGGIO", "FALLITO");
+            }
         }
     }
 }
@@ -201,6 +230,7 @@ static void input(void)
     prev_keys = keys;
     prev_btn = btn;
     forward_events();
+    tfm_ui_set_play_state(U, tfm_play_state(E));   /* passo del sequencer per lo schermo */
     {   /* luci: dai bit dell'interfaccia (tasti 0..13, note 14..40) ai bit di plat.h */
         uint64_t l = tfm_ui_leds(U);
         uint32_t lb = 0;

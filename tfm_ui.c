@@ -34,8 +34,8 @@ static const uint8_t punct[][6] = {
 /* Sezioni, pagine e parametri                                         */
 /* ------------------------------------------------------------------ */
 
-enum { S_HOME, S_EDIT, S_ENV, S_FILTER, S_GLO, S_INFO, S_FX, S_LFO, S_COUNT };
-enum { T_F, T_WAVE, T_MULT, T_LIST, T_TUNE, T_NONE, T_VOICES, T_MS, T_AMT };
+enum { S_HOME, S_EDIT, S_ENV, S_FILTER, S_GLO, S_INFO, S_FX, S_LFO, S_ARP, S_SEQ, S_SAVE, S_COUNT };
+enum { T_F, T_WAVE, T_MULT, T_LIST, T_TUNE, T_NONE, T_VOICES, T_MS, T_AMT, T_BPM, T_LEN, T_STEP };
 
 typedef struct { uint8_t type; uint16_t id; const char *label; const char *const *list; uint8_t count; } pdesc;
 
@@ -63,6 +63,11 @@ static const char *const L_LMODE[TFM_LFO_MODES] = { "BIPO", "UNI+", "UNI-", "REC
 static const char *const L_VWAVE[5] = { "SINE", "RECT", "SAW", "RAMP", "NOIZ" };
 static const char *const L_VMODE[3] = { "BIPO", "UP", "DOWN" };
 static const char *const L_GLMODE[2] = { "ALL", "LEGT" };
+static const char *const L_RANGE[6] = { "1", "2", "3", "4", "5", "6" };
+static const char *const L_SEQNOTE[2] = { "ABS", "RELA" };
+static const char *const L_SEQDIR[4] = { "FWD", "REV", "PING", "RAND" };
+static const char *const L_ROOT[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+static const char *const L_GATE[3] = { "REST", "TRIG", "TIE" };
 static const char *const L_TEN[11] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
 
 #define OPID(f) (0x100u | (f)) /* parametro dell'operatore selezionato */
@@ -76,14 +81,16 @@ static const pdesc P_FILTER[3][4] = {
     { {T_LIST, TFM_P_FLT_TYPE, "TYPE", L_FT, 15}, {T_F, TFM_P_CUTOFF, "CUTOFF", 0, 0}, {T_F, TFM_P_RES, "RES", 0, 0}, {T_F, TFM_P_FLT_ENV, "ENV", 0, 0} },
     { {T_F, TFM_P_HEAT, "HEAT", 0, 0}, {T_LIST, TFM_P_FLAVOUR, "FLAV", L_FLAV, 2}, {T_F, TFM_P_WOBBLE, "WOBBLE", 0, 0}, {T_LIST, TFM_P_KEYTRACK, "KTRACK", L_TEN, 11} },
     { {T_F, TFM_P_FLT_A, "ATK", 0, 0}, {T_F, TFM_P_FLT_D, "DEC", 0, 0}, {T_F, TFM_P_FLT_S, "SUS", 0, 0}, {T_F, TFM_P_FLT_R, "REL", 0, 0} } };
-static const pdesc P_GLO[6][4] = {
+static const pdesc P_GLO[7][4] = {
     { {T_LIST, TFM_P_VOICE_MODE, "MODE", L_MODE, TFM_VOICE_MODES}, {T_VOICES, TFM_P_VOICES, "VOICES", L_VOICES, 8}, {T_LIST, TFM_P_PRIO, "PRIO", L_PRIO, 3}, {T_F, TFM_P_FAT, "FAT", 0, 0} },
     { {T_F, TFM_P_FB1, "FB 1", 0, 0}, {T_LIST, TFM_P_ALGO2, "LAYER2", L_L2, 2}, {T_F, TFM_P_FB2, "FB 5", 0, 0}, {T_TUNE, TFM_P_L2_TUNE, "L2TUNE", 0, 49} },
     { {T_F, TFM_P_VOLUME, "VOLUME", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} },
     { {T_F, TFM_P_VIB_RATE, "RATE", 0, 0}, {T_F, TFM_P_VIB_DEPTH, "DEPTH", 0, 0}, {T_LIST, TFM_P_VIB_WAVE, "WAVE", L_VWAVE, 5}, {T_LIST, TFM_P_VIB_MODE, "MODE", L_VMODE, 3} },
     { {T_F, TFM_P_TREM_RATE, "RATE", 0, 0}, {T_F, TFM_P_TREM_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_TREM_PHASE, "PHASE", 0, 0}, {T_NONE, 0, "", 0, 0} },
-    { {T_F, TFM_P_GLIDE, "GLIDE", 0, 0}, {T_LIST, TFM_P_GLIDE_MODE, "GL MOD", L_GLMODE, 2}, {T_F, TFM_P_RISE, "RISE", 0, 0}, {T_F, TFM_P_FALL, "FALL", 0, 0} } };
-#define GLO_PAGES 6
+    { {T_F, TFM_P_GLIDE, "GLIDE", 0, 0}, {T_LIST, TFM_P_GLIDE_MODE, "GL MOD", L_GLMODE, 2}, {T_F, TFM_P_RISE, "RISE", 0, 0}, {T_F, TFM_P_FALL, "FALL", 0, 0} },
+    { {T_LIST, TFM_P_SCALE, "SCALA", tfm_scale_names, TFM_SCALES}, {T_LIST, TFM_P_ROOT, "TONICA", L_ROOT, 12},
+      {T_LIST, TFM_P_CHORD, "ACCORDO", tfm_chord_names, TFM_CHORDS}, {T_NONE, 0, "", 0, 0} } };
+#define GLO_PAGES 7
 static const pdesc P_FX[7][4] = {
     { {T_LIST, TFM_P_DIST_TYPE, "TYPE", L_DIST, TFM_DIST_SHAPES}, {T_F, TFM_P_DIST_DRIVE, "DRIVE", 0, 0}, {T_F, TFM_P_DIST_TEMP, "TEMP", 0, 0}, {T_F, TFM_P_DIST_MIX, "MIX", 0, 0} },
     { {T_F, TFM_P_PH_RATE, "RATE", 0, 0}, {T_F, TFM_P_PH_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_PH_FB, "FDBK", 0, 0}, {T_F, TFM_P_PH_MIX, "MIX", 0, 0} },
@@ -103,12 +110,32 @@ static const pdesc P_LFO[12][4] = {
     LMAIN(2), LCH(TFM_P_LFO3_LINKS, 0, "1", "2"), LCH(TFM_P_LFO3_LINKS, 1, "3", "4"),
     { {T_F, TFM_P_MENV_A, "ATK", 0, 0}, {T_F, TFM_P_MENV_D, "DEC", 0, 0}, {T_F, TFM_P_MENV_S, "SUS", 0, 0}, {T_F, TFM_P_MENV_R, "REL", 0, 0} },
     LCH(TFM_P_MENV_LINKS, 0, "1", "2"), LCH(TFM_P_MENV_LINKS, 1, "3", "4") };
-static const uint8_t page_count[S_COUNT] = { 1, 2, 1, 3, GLO_PAGES, 1, 7, 12 };
+/* fase 5: arpeggiatore, sequencer, salvataggio */
+static const pdesc P_ARP[2][4] = {
+    { {T_LIST, TFM_P_ARP_ON, "ARP", L_OFFON, 2}, {T_LIST, TFM_P_ARP_MODE, "MODE", tfm_arp_names, TFM_ARP_MODES},
+      {T_LIST, TFM_P_ARP_RANGE, "OTTAVE", L_RANGE, 6}, {T_LIST, TFM_P_ARP_RATE, "RATE", tfm_div_names, TFM_DIVS} },
+    { {T_F, TFM_P_ARP_GATE, "GATE", 0, 0}, {T_LIST, TFM_P_ARP_LATCH, "LATCH", L_OFFON, 2}, {T_F, TFM_P_SWING, "SWING", 0, 0}, {T_BPM, TFM_P_BPM, "BPM", 0, 0} } };
+enum { V_STEP = 0x400, V_NOTE, V_GATE, V_CLEAR, V_SLOT, V_CH1, V_CH2, V_CH3, V_CH4 };   /* comandi che non sono parametri */
+static const pdesc P_SEQ[3][4] = {
+    { {T_LIST, TFM_P_SEQ_NOTE, "NOTE", L_SEQNOTE, 2}, {T_LEN, TFM_P_SEQ_LEN, "PASSI", 0, 0},
+      {T_LIST, TFM_P_SEQ_DIR, "DIREZ", L_SEQDIR, 4}, {T_LIST, TFM_P_SEQ_RATE, "RATE", tfm_div_names, TFM_DIVS} },
+    { {T_BPM, TFM_P_BPM, "BPM", 0, 0}, {T_F, TFM_P_SEQ_GATE, "GATE", 0, 0}, {T_F, TFM_P_SWING, "SWING", 0, 0}, {T_NONE, 0, "", 0, 0} },
+    { {T_STEP, V_STEP, "PASSO", 0, 0}, {T_STEP, V_NOTE, "NOTA", 0, 0}, {T_STEP, V_GATE, "GATE", 0, 0}, {T_STEP, V_CLEAR, "CANCELLA", 0, 0} } };
+static const pdesc P_SAVE[4] = { {T_STEP, V_CH1, "CAR 1", 0, 0}, {T_STEP, V_CH2, "CAR 2", 0, 0}, {T_STEP, V_CH3, "CAR 3", 0, 0}, {T_STEP, V_CH4, "CAR 4", 0, 0} };
+static const uint8_t page_count[S_COUNT] = { 1, 2, 1, 3, GLO_PAGES, 1, 7, 12, 2, 3, 1 };
 
 static const uint8_t black_keys[11] = { 1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25 };
 
+typedef struct { char name[5]; uint8_t used; uint8_t p[TFM_P_COUNT]; tfm_seq seq; } user_preset;
+#define SAVE_CHARS " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-+."
+
 struct tfm_ui {
     tfm_patch patch;
+    tfm_seq seq;              /* i passi del sequencer del preset corrente */
+    user_preset user[TFM_USER_SLOTS];
+    uint8_t playing, rec, cursor, play_step, arp_busy, clear_acc, saved_msg;
+    uint8_t save_slot;
+    char save_name[5];
     tfm_event q[64];
     uint8_t qh, qt;
     uint8_t section, page[S_COUNT], op, preset, info;
@@ -132,6 +159,48 @@ unsigned tfm_ui_size(void) { return (sizeof(tfm_ui) + 7u) & ~7u; }
 void tfm_ui_set_blit(tfm_ui *u, tfm_blit_fn fn) { u->blit = fn; u->dirty = 1; tfm_memset(u->band_hash, 0xff, sizeof u->band_hash); }
 unsigned tfm_ui_preset_count(void) { return TFM_PRESET_COUNT; }
 const char *tfm_ui_preset_name(unsigned i) { return i < TFM_PRESET_COUNT ? tfm_presets[i].name : ""; }
+const tfm_seq *tfm_ui_seq(const tfm_ui *u) { return &u->seq; }
+int tfm_ui_playing(const tfm_ui *u) { return u->playing; }
+void tfm_ui_set_play_state(tfm_ui *u, unsigned st)
+{
+    uint8_t step = (uint8_t)(st & 0xff), busy = (uint8_t)((st >> 9) & 1);
+    if ((st >> 8 & 1) && step != u->play_step) { u->play_step = step; if (u->section == S_SEQ || u->section == S_HOME) u->dirty = 1; }
+    if (busy != u->arp_busy) { u->arp_busy = busy; if (u->section == S_ARP) u->dirty = 1; }
+}
+/* preset utente in flash: "TWR1", numero di parametri (2 byte), nome (4), parametri, note e gate dei passi */
+unsigned tfm_ui_user_blob(const tfm_ui *u, unsigned slot, uint8_t *buf, unsigned max)
+{
+    unsigned need = 10u + TFM_P_COUNT + 2u * TFM_SEQ_STEPS;
+    if (slot >= TFM_USER_SLOTS || !u->user[slot].used || max < need) return 0;
+    const user_preset *s = &u->user[slot];
+    buf[0] = 'T'; buf[1] = 'W'; buf[2] = 'R'; buf[3] = '1';
+    buf[4] = (uint8_t)(TFM_P_COUNT & 0xff); buf[5] = (uint8_t)(TFM_P_COUNT >> 8);
+    for (unsigned i = 0; i < 4; i++) buf[6 + i] = (uint8_t)s->name[i];
+    tfm_memcpy(buf + 10, s->p, TFM_P_COUNT);
+    tfm_memcpy(buf + 10 + TFM_P_COUNT, s->seq.note, TFM_SEQ_STEPS);
+    tfm_memcpy(buf + 10 + TFM_P_COUNT + TFM_SEQ_STEPS, s->seq.gate, TFM_SEQ_STEPS);
+    return need;
+}
+int tfm_ui_user_load(tfm_ui *u, unsigned slot, const uint8_t *buf, unsigned len)
+{
+    if (slot >= TFM_USER_SLOTS || len < 10 || buf[0] != 'T' || buf[1] != 'W' || buf[2] != 'R' || buf[3] != '1') return -1;
+    unsigned n = buf[4] | (unsigned)buf[5] << 8;
+    if (len < 10u + n + 2u * TFM_SEQ_STEPS) return -1;
+    user_preset *s = &u->user[slot];
+    tfm_patch def;
+    tfm_patch_init(&def);   /* i parametri aggiunti dopo il salvataggio prendono il valore iniziale */
+    tfm_memcpy(s->p, def.p, TFM_P_COUNT);
+    tfm_memcpy(s->p, buf + 10, n < TFM_P_COUNT ? n : TFM_P_COUNT);
+    for (unsigned i = 0; i < TFM_P_COUNT; i++) if (s->p[i] > 127) s->p[i] = 127;
+    for (unsigned i = 0; i < 4; i++) { char c = (char)buf[6 + i]; s->name[i] = c >= ' ' && c < 127 ? c : ' '; }
+    s->name[4] = 0;
+    tfm_memcpy(s->seq.note, buf + 10 + n, TFM_SEQ_STEPS);
+    tfm_memcpy(s->seq.gate, buf + 10 + n + TFM_SEQ_STEPS, TFM_SEQ_STEPS);
+    for (unsigned i = 0; i < TFM_SEQ_STEPS; i++) { if (s->seq.note[i] > 127) s->seq.note[i] = 60; if (s->seq.gate[i] > 2) s->seq.gate[i] = 0; }
+    s->used = 1;
+    u->dirty = 1;
+    return 0;
+}
 const tfm_patch *tfm_ui_patch(const tfm_ui *u) { return &u->patch; }
 #ifndef TFM_UI_NO_FRAMEBUFFER
 const uint16_t *tfm_ui_framebuffer(const tfm_ui *u) { return u->fb; }
@@ -152,10 +221,23 @@ int tfm_ui_next_event(tfm_ui *u, tfm_event *out)
     return 1;
 }
 
+static int preset_used(const tfm_ui *u, unsigned i)
+{
+    return i < TFM_PRESET_COUNT || (i < TFM_PRESET_COUNT + TFM_USER_SLOTS && u->user[i - TFM_PRESET_COUNT].used);
+}
 static void load_preset(tfm_ui *u, unsigned i)
 {
-    for (unsigned k = 0; k < TFM_P_COUNT; k++) u->patch.p[k] = tfm_presets[i].p[k];
+    if (i < TFM_PRESET_COUNT) {
+        for (unsigned k = 0; k < TFM_P_COUNT; k++) u->patch.p[k] = tfm_presets[i].p[k];
+        tfm_seq_default(&u->seq);
+    } else {
+        const user_preset *s = &u->user[i - TFM_PRESET_COUNT];
+        tfm_memcpy(u->patch.p, s->p, TFM_P_COUNT);
+        u->seq = s->seq;
+    }
+    if (u->playing && u->patch.p[TFM_P_ARP_ON]) u->patch.p[TFM_P_ARP_ON] = 0;   /* il sequencer in corsa continua */
     u->preset = (uint8_t)i;
+    u->saved_msg = 0;
     push(u, TFM_EV_PATCH, (uint8_t)i, 0);
     u->dirty = 1;
 }
@@ -169,6 +251,7 @@ tfm_ui *tfm_ui_init(void *memory)
     u->band = u->bands[0];
     u->touched = -1;
     u->qh = u->qt = 0;
+    for (unsigned i = 0; i < TFM_USER_SLOTS; i++) tfm_strcpy(u->user[i].name, "----");
     load_preset(u, TFM_PRESET_COUNT > 1 ? 1 : 0);
     u->section = S_HOME;
     u->dirty = 1;
@@ -177,6 +260,10 @@ tfm_ui *tfm_ui_init(void *memory)
 
 /* ---- parametri ---- */
 static void fx_slots(const tfm_ui *u, uint8_t out[4]);
+static const char *preset_name(const tfm_ui *u)
+{
+    return u->preset < TFM_PRESET_COUNT ? tfm_presets[u->preset].name : u->user[u->preset - TFM_PRESET_COUNT].name;
+}
 static unsigned algo_cur(const tfm_ui *u) { unsigned a = u->patch.p[TFM_P_ALGO]; return a < TFM_ALGOS ? a : TFM_ALGOS - 1; }
 static unsigned mode_cur(const tfm_ui *u) { unsigned m = u->patch.p[TFM_P_VOICE_MODE]; return m < TFM_VOICE_MODES ? m : 0; }
 static int mode_is_poly(const tfm_ui *u) { unsigned m = mode_cur(u); return m == 0 || m == 5 || m == 6; }
@@ -185,6 +272,7 @@ static int mode_is_mono(const tfm_ui *u) { unsigned m = mode_cur(u); return m ==
 static int resolve_id(const tfm_ui *u, const pdesc *d)
 {
     if (d->type == T_NONE) return -1;
+    if (d->type == T_STEP) return (int)d->id;   /* comando virtuale: >= TFM_P_COUNT */
     if (d->id == FB_ID) /* feedback: solo OP1 e OP5 */
         return u->op == 0 ? TFM_P_FB1 : u->op == 4 ? TFM_P_FB2 : -1;
     if (d->id & 0x100) return (int)TFM_OP_BASE(u->op) + (d->id & 0xff);
@@ -223,12 +311,23 @@ static const pdesc *page_params(const tfm_ui *u)
     case S_GLO: return P_GLO[u->page[S_GLO]];
     case S_FX: return P_FX[u->page[S_FX]];
     case S_LFO: return P_LFO[u->page[S_LFO]];
+    case S_ARP: return P_ARP[u->page[S_ARP]];
+    case S_SEQ: return P_SEQ[u->page[S_SEQ]];
+    case S_SAVE: return P_SAVE;
     default: return 0;
     }
+}
+static void stop_seq(tfm_ui *u)
+{
+    if (!u->playing) return;
+    u->playing = 0;
+    push(u, TFM_EV_PLAY, 0, 0);
+    u->dirty = 1;
 }
 static void set_param(tfm_ui *u, int id, int v)
 {
     if (id < 0 || id >= TFM_P_COUNT) return;
+    if (id == TFM_P_ARP_ON && v) stop_seq(u);   /* arp e sequencer non suonano insieme */
     if (v < 0) v = 0;
     if (v > 127) v = 127;
     if (u->patch.p[id] == v) return;
@@ -236,10 +335,54 @@ static void set_param(tfm_ui *u, int id, int v)
     push(u, TFM_EV_PARAM, (uint8_t)id, (uint8_t)v);
     u->dirty = 1;
 }
+static unsigned seq_len_ui(const tfm_ui *u) { return (unsigned)(u->patch.p[TFM_P_SEQ_LEN] & 127) + 1; }
+static void write_step(tfm_ui *u, unsigned st, int note, int gate)
+{
+    if (st >= TFM_SEQ_STEPS) return;
+    u->seq.note[st] = (uint8_t)(note < 0 ? 0 : note > 127 ? 127 : note);
+    u->seq.gate[st] = (uint8_t)gate;
+    push(u, TFM_EV_STEP, (uint8_t)st, 0);
+    u->dirty = 1;
+}
+static void turn_virtual(tfm_ui *u, unsigned id, int delta)
+{
+    unsigned c = u->cursor;
+    switch (id) {
+    case V_STEP: {
+        int n = (int)seq_len_ui(u), s = ((int)c + delta) % n;
+        u->cursor = (uint8_t)(s < 0 ? s + n : s);
+        break;
+    }
+    case V_NOTE: write_step(u, c, (int)u->seq.note[c] + delta, u->seq.gate[c] == TFM_GATE_REST ? TFM_GATE_TRIG : u->seq.gate[c]); break;
+    case V_GATE: { int g = (int)u->seq.gate[c] + (delta > 0 ? 1 : -1); write_step(u, c, u->seq.note[c], g < 0 ? 2 : g > 2 ? 0 : g); } break;
+    case V_CLEAR:   /* otto scatti in senso orario per cancellare: niente incidenti */
+        if (delta < 0) { u->clear_acc = 0; break; }
+        u->clear_acc = (uint8_t)(u->clear_acc + delta);
+        if (u->clear_acc >= 8) {
+            u->clear_acc = 0;
+            for (unsigned i = 0; i < TFM_SEQ_STEPS; i++) { u->seq.note[i] = 60; u->seq.gate[i] = TFM_GATE_REST; }
+            u->cursor = 0;
+            push(u, TFM_EV_SEQ, 0, 0);
+        }
+        break;
+    case V_CH1: case V_CH2: case V_CH3: case V_CH4: {
+        static const char set[] = SAVE_CHARS;
+        int n = (int)sizeof set - 1, k = (int)(id - V_CH1), cur = 0;
+        for (int i = 0; i < n; i++) if (set[i] == u->save_name[k]) cur = i;
+        cur = ((cur + (delta > 0 ? 1 : -1)) % n + n) % n;
+        u->save_name[k] = set[cur];
+        break;
+    }
+    default: break;
+    }
+    u->dirty = 1;
+}
 static void turn_param(tfm_ui *u, const pdesc *d, int delta)
 {
     int id = resolve_id(u, d);
     if (id < 0) return;
+    if (d->type == T_STEP) { turn_virtual(u, (unsigned)id, delta); return; }
+    if (d->type == T_BPM || d->type == T_LEN) { set_param(u, id, u->patch.p[id] + delta); return; }
     if (d->type == T_F || d->type == T_MS) { set_param(u, id, u->patch.p[id] + delta); return; }
     int i = (int)list_index(d, u->patch.p[id]) + (delta > 0 ? 1 : -1);
     int n = d->type == T_TUNE ? 49 : d->count;
@@ -253,11 +396,42 @@ static void turn_param(tfm_ui *u, const pdesc *d, int delta)
     }
     set_param(u, id, list_store(d, (unsigned)i));
 }
+static void num_text(char *out, unsigned n)
+{
+    char tmp[6]; int k = 0;
+    do { tmp[k++] = (char)('0' + n % 10); n /= 10; } while (n && k < 5);
+    for (int i = 0; i < k; i++) out[i] = tmp[k - 1 - i];
+    out[k] = 0;
+}
+/* nome della nota MIDI: C4 = 60 */
+static void note_text(char *out, unsigned n)
+{
+    tfm_strcpy(out, L_ROOT[n % 12]);
+    unsigned l = (unsigned)tfm_strlen(out);
+    int o = (int)(n / 12) - 1;
+    if (o < 0) { out[l++] = '-'; o = 1; }
+    out[l] = (char)('0' + o);
+    out[l + 1] = 0;
+}
 static void value_text(const tfm_ui *u, const pdesc *d, char *out)
 {
     int id = resolve_id(u, d);
     if (id < 0) { tfm_strcpy(out, d->type == T_NONE ? "" : "-"); return; }
+    if (d->type == T_STEP) {
+        unsigned c = u->cursor;
+        switch (id) {
+        case V_STEP: num_text(out, c + 1); break;
+        case V_NOTE: if (u->seq.gate[c] == TFM_GATE_REST) tfm_strcpy(out, "--"); else note_text(out, u->seq.note[c]); break;
+        case V_GATE: tfm_strcpy(out, L_GATE[u->seq.gate[c] % 3]); break;
+        case V_CLEAR: { static const char *const bar[9] = { ">>>", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8" };
+                        tfm_strcpy(out, bar[u->clear_acc > 8 ? 8 : u->clear_acc]); } break;
+        default: { char s[2] = { u->save_name[id - V_CH1], 0 }; tfm_strcpy(out, s[0] == ' ' ? "_" : s); } break;
+        }
+        return;
+    }
     uint8_t v = u->patch.p[id];
+    if (d->type == T_BPM) { num_text(out, 60u + v); return; }
+    if (d->type == T_LEN) { num_text(out, (v & 127u) + 1u); return; }
     if (d->type == T_F || d->type == T_MS) {
         unsigned n = v;
         if (d->type == T_MS) { /* 30 * 40^(v/127) ms, come nel motore */
@@ -296,10 +470,9 @@ static void goto_section(tfm_ui *u, unsigned s, unsigned info)
 void tfm_ui_encoder(tfm_ui *u, unsigned enc, int delta)
 {
     if (!delta) return;
-    if (enc == TFM_ENC_PRESETS) {
-        int p = (int)u->preset + (delta > 0 ? 1 : -1);
-        if (p < 0) p = TFM_PRESET_COUNT - 1;
-        if (p >= TFM_PRESET_COUNT) p = 0;
+    if (enc == TFM_ENC_PRESETS) {   /* preset di fabbrica, poi gli slot utente non vuoti */
+        int total = TFM_PRESET_COUNT + TFM_USER_SLOTS, p = (int)u->preset;
+        do { p = (p + (delta > 0 ? 1 : total - 1)) % total; } while (!preset_used(u, (unsigned)p));
         load_preset(u, (unsigned)p);
         return;
     }
@@ -311,6 +484,7 @@ void tfm_ui_encoder(tfm_ui *u, unsigned enc, int delta)
     if (enc == TFM_ENC_SELECT) {
         /* SELECT sfoglia le pagine; in ENV, che ha una pagina, sceglie l'operatore */
         if (u->section == S_ENV) u->op = (uint8_t)((u->op + (delta > 0 ? 1 : 5)) % 6);
+        else if (u->section == S_SAVE) u->save_slot = (uint8_t)((u->save_slot + (delta > 0 ? 1 : TFM_USER_SLOTS - 1)) % TFM_USER_SLOTS);
         else if (page_count[u->section] > 1) {
             unsigned n = page_count[u->section];
             u->page[u->section] = (uint8_t)((u->page[u->section] + (delta > 0 ? 1 : n - 1)) % n);
@@ -333,6 +507,7 @@ void tfm_ui_button(tfm_ui *u, unsigned b, int down)
     if (b >= TFM_BTN_COUNT) return;
     u->held_btn[b] = (uint8_t)(down != 0);
     if (!down) return;
+    if (b != TFM_BTN_SAVE) u->saved_msg = 0;
     switch (b) {
     case TFM_BTN_OCT_DOWN: if (u->octave > -3) u->octave--; u->dirty = 1; break;
     case TFM_BTN_OCT_UP: if (u->octave < 3) u->octave++; u->dirty = 1; break;
@@ -346,7 +521,60 @@ void tfm_ui_button(tfm_ui *u, unsigned b, int down)
         if (u->section == S_LFO) u->page[S_LFO] = (uint8_t)((u->page[S_LFO] / 3 + 1) % 4 * 3);
         u->section = S_LFO; u->touched = -1; u->dirty = 1;
         break;
-    default: goto_section(u, S_INFO, b); break; /* SAVE, ARP, SEQ, PLAY, REC: fase 5 */
+    case TFM_BTN_ARP:   /* fuori dalla pagina: la apre; dentro: accende/spegne */
+        if (u->section == S_ARP) set_param(u, TFM_P_ARP_ON, u->patch.p[TFM_P_ARP_ON] ? 0 : 1);
+        u->section = S_ARP; u->touched = -1; u->dirty = 1;
+        break;
+    case TFM_BTN_SEQ: goto_section(u, S_SEQ, 0); break;
+    case TFM_BTN_PLAY:
+        if (u->playing) stop_seq(u);
+        else {
+            set_param(u, TFM_P_ARP_ON, 0);
+            u->playing = 1;
+            u->play_step = 0;
+            push(u, TFM_EV_PLAY, 1, 0);
+        }
+        u->dirty = 1;
+        break;
+    case TFM_BTN_REC:   /* registrazione dei passi dalla tastiera */
+        u->rec ^= 1u;
+        if (u->rec) { u->section = S_SEQ; u->page[S_SEQ] = 2; u->touched = -1; }
+        u->dirty = 1;
+        break;
+    case TFM_BTN_SAVE:
+        if (u->section == S_SAVE) {   /* seconda pressione: salva */
+            user_preset *s = &u->user[u->save_slot];
+            tfm_memcpy(s->p, u->patch.p, TFM_P_COUNT);
+            s->seq = u->seq;
+            tfm_memcpy(s->name, u->save_name, 4);
+            s->name[4] = 0;
+            s->used = 1;
+            push(u, TFM_EV_SAVE, u->save_slot, 0);
+            u->preset = (uint8_t)(TFM_PRESET_COUNT + u->save_slot);
+            u->section = S_HOME;
+            u->saved_msg = 1;
+        } else {
+            if (u->preset >= TFM_PRESET_COUNT) u->save_slot = (uint8_t)(u->preset - TFM_PRESET_COUNT);
+            else {   /* il primo slot libero */
+                u->save_slot = 0;
+                for (unsigned i = 0; i < TFM_USER_SLOTS; i++) if (!u->user[i].used) { u->save_slot = (uint8_t)i; break; }
+            }
+            const char *n = preset_name(u);
+            for (unsigned i = 0; i < 4; i++) {
+                char c = n[i] ? n[i] : ' ';
+                if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+                int ok = 0;
+                for (const char *s = SAVE_CHARS; *s; s++) if (*s == c) ok = 1;
+                u->save_name[i] = ok ? c : ' ';
+                if (!n[i]) n = "    ";
+            }
+            u->save_name[4] = 0;
+            u->section = S_SAVE;
+        }
+        u->touched = -1;
+        u->dirty = 1;
+        break;
+    default: break;
     }
 }
 
@@ -372,6 +600,11 @@ void tfm_ui_key_vel(tfm_ui *u, unsigned key, int down, unsigned vel)
         int note = 53 + (int)key + 12 * u->octave; /* il tasto 0 e' FA3 */
         if (note < 0 || note > 127) return;
         u->key_note[key] = (uint8_t)note;
+        if (u->rec || (u->section == S_SEQ && u->page[S_SEQ] == 2)) {   /* scrive il passo */
+            unsigned st = u->playing && u->rec ? u->play_step : u->cursor;
+            write_step(u, st, note, TFM_GATE_TRIG);
+            if (!(u->playing && u->rec)) u->cursor = (uint8_t)((u->cursor + 1) % seq_len_ui(u));
+        }
         push(u, TFM_EV_NOTE_ON, (uint8_t)note, (uint8_t)vel);
     } else if (u->key_note[key] != 0xff) {
         push(u, TFM_EV_NOTE_OFF, u->key_note[key], 0);
@@ -382,9 +615,13 @@ void tfm_ui_key_vel(tfm_ui *u, unsigned key, int down, unsigned vel)
 uint64_t tfm_ui_leds(const tfm_ui *u)
 {
     uint64_t l = 0;
-    static const uint8_t sec_btn[S_COUNT] = { TFM_BTN_HOME, TFM_BTN_EDIT, TFM_BTN_ENV, TFM_BTN_SEL, TFM_BTN_GLO, 0, TFM_BTN_FX, TFM_BTN_LFO };
+    static const uint8_t sec_btn[S_COUNT] = { TFM_BTN_HOME, TFM_BTN_EDIT, TFM_BTN_ENV, TFM_BTN_SEL, TFM_BTN_GLO, 0, TFM_BTN_FX, TFM_BTN_LFO,
+                                              TFM_BTN_ARP, TFM_BTN_SEQ, TFM_BTN_SAVE };
     if (u->section == S_INFO) l |= 1ull << u->info;
     else l |= 1ull << sec_btn[u->section];
+    if (u->patch.p[TFM_P_ARP_ON]) l |= 1ull << TFM_BTN_ARP;
+    if (u->playing) l |= 1ull << TFM_BTN_PLAY;
+    if (u->rec) l |= 1ull << TFM_BTN_REC;
     if (u->octave < 0) l |= 1ull << TFM_BTN_OCT_DOWN;
     if (u->octave > 0) l |= 1ull << TFM_BTN_OCT_UP;
     if (u->section == S_EDIT || u->section == S_ENV) l |= 1ull << (14 + black_keys[u->op]);
@@ -441,6 +678,8 @@ static void frame(tfm_ui *u, int x, int y, int w, int h, uint16_t c)
 static const uint8_t *glyph(char ch)
 {
     static const uint8_t blank[5] = { 0 };
+    static const uint8_t small_m[5] = { 0x7c, 0x04, 0x18, 0x04, 0x78 };   /* "m" minuscola: PNTm, HARm... */
+    if (ch == 'm') return small_m;
     if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 32);
     if (ch >= '0' && ch <= '9') return font[ch - '0'];
     if (ch >= 'A' && ch <= 'Z') return font[10 + ch - 'A'];
@@ -571,8 +810,17 @@ static void draw_home(tfm_ui *u)
     char num[8] = "P01/05";
     num[1] = (char)('0' + (u->preset + 1) / 10); num[2] = (char)('0' + (u->preset + 1) % 10);
     num[4] = (char)('0' + TFM_PRESET_COUNT / 10); num[5] = (char)('0' + TFM_PRESET_COUNT % 10);
-    header(u, "HOME", num);
-    text(u, 6, 40, tfm_presets[u->preset].name, 3, TEXT);
+    if (u->preset >= TFM_PRESET_COUNT) {   /* preset utente */
+        unsigned s = u->preset - TFM_PRESET_COUNT + 1u;
+        num[0] = 'U'; num[1] = (char)('0' + s / 10); num[2] = (char)('0' + s % 10); num[3] = 0;
+    }
+    header(u, "HOME", u->saved_msg ? "SALVATO!" : num);
+    text(u, 6, 40, preset_name(u), 3, TEXT);
+    {   /* arp e sequencer, se attivi */
+        int sx = 234;
+        if (u->playing) { char st[8]; num_text(st, u->play_step + 1u); sx -= text_w(st, 1); text(u, sx, 44, st, 1, GREEN); sx -= text_w("SEQ ", 1) + 2; text(u, sx, 44, "SEQ", 1, GREEN); }
+        if (u->patch.p[TFM_P_ARP_ON]) { sx -= text_w("ARP", 1) + 8; text(u, sx, 44, "ARP", 1, AMBER); }
+    }
     {
         unsigned a = algo_cur(u);
         char an[4] = { 'A', (char)('0' + (a + 1) / 10), (char)('0' + (a + 1) % 10), 0 };
@@ -942,10 +1190,12 @@ static void draw_glo_mod(tfm_ui *u, unsigned pg)
     footer(u, P_GLO[pg]);
 }
 
+static void draw_scale(tfm_ui *u);
 static void draw_glo(tfm_ui *u)
 {
-    static const char *const sub[GLO_PAGES] = { "1 VOCI", "2 LAYER", "3 LIVELLO", "4 VIBRATO", "5 TREMOLO", "6 PITCH" };
+    static const char *const sub[GLO_PAGES] = { "1 VOCI", "2 LAYER", "3 LIVELLO", "4 VIBRATO", "5 TREMOLO", "6 PITCH", "7 SCALA" };
     header(u, "GLOBAL", sub[u->page[S_GLO]]);
+    if (u->page[S_GLO] == 6) { draw_scale(u); page_dots(u, GLO_PAGES, 6); footer(u, P_GLO[6]); return; }
     if (u->page[S_GLO] >= 3) { draw_glo_mod(u, u->page[S_GLO]); return; }
     const uint8_t *p = u->patch.p;
     unsigned m = mode_cur(u);
@@ -1105,6 +1355,197 @@ static void draw_fx(tfm_ui *u)
     footer(u, P_FX[pg]);
 }
 
+/* ---- fase 5: arpeggiatore, sequencer, salvataggio ---- */
+/* le note dell'arpeggio per il disegno: tasti tenuti (o DO-MI-SOL), come fa il motore */
+static unsigned arp_preview(const tfm_ui *u, uint8_t *out, unsigned steps, uint8_t *lo, uint8_t *hi)
+{
+    uint8_t s[16], h[16];
+    unsigned n = 0;
+    for (unsigned k = 0; k < TFM_KEYS && n < 16; k++) if (u->key_note[k] != 0xff) h[n++] = u->key_note[k];
+    if (!n) { h[0] = 60; h[1] = 64; h[2] = 67; n = 3; }
+    for (unsigned i = 0; i < n; i++) { unsigned j = i; while (j && s[j - 1] > h[i]) { s[j] = s[j - 1]; j--; } s[j] = h[i]; }
+    const uint8_t *p = u->patch.p;
+    unsigned R = (unsigned)(p[TFM_P_ARP_RANGE] % 6) + 1, T = n * R, mode = p[TFM_P_ARP_MODE] % TFM_ARP_MODES;
+    uint32_t r = 12345u;
+    int walk = 0;
+    for (unsigned k = 0; k < steps; k++) {
+        unsigned i = 0;
+        const uint8_t *src = s;
+        r = r * 1664525u + 1013904223u;
+        switch (mode) {
+        case 0: i = k % T; break;
+        case 1: i = T - 1 - k % T; break;
+        case 2: { unsigned per = T > 1 ? 2 * T - 2 : 1, j = k % per; i = j < T ? j : per - j; } break;
+        case 3: i = (r >> 16) % T; break;
+        case 4: walk += (r >> 16) & 1 ? 1 : -1; if (walk < 0) walk = T > 1 ? 1 : 0; if (walk >= (int)T) walk = (int)T - 2 < 0 ? 0 : (int)T - 2; i = (unsigned)walk; break;
+        case 5: { unsigned j = k % T; i = j & 1 ? T - 1 - j / 2 : j / 2; } break;
+        case 6: { unsigned j = T - 1 - k % T; i = j & 1 ? T - 1 - j / 2 : j / 2; } break;
+        case 7: i = k % T; src = h; break;
+        case 8: i = (k / 2) % T; break;
+        default: i = (k % R) * n; break;   /* ALL: si disegna la nota piu' bassa di ogni ottava */
+        }
+        out[k] = (uint8_t)(src[i % n] + 12 * (i / n));
+    }
+    *lo = s[0];
+    *hi = (uint8_t)(s[n - 1] + 12 * (R - 1));
+    return n;
+}
+static void tempo_text(tfm_ui *u, int x, int y, unsigned div_param)
+{
+    char s[20];
+    tfm_strcpy(s, tfm_div_names[u->patch.p[div_param] % TFM_DIVS]);
+    unsigned l = (unsigned)tfm_strlen(s);
+    s[l++] = ' '; s[l++] = '@'; s[l++] = ' ';
+    num_text(s + l, 60u + u->patch.p[TFM_P_BPM]);
+    x = text(u, x, y, s, 2, TEXT);
+    text(u, x + 4, y + 7, "BPM", 1, DIM);
+}
+static void draw_arp(tfm_ui *u)
+{
+    const uint8_t *p = u->patch.p;
+    header(u, "ARP", u->page[S_ARP] ? "2 GATE E TEMPO" : "1 MODO");
+    int on = p[TFM_P_ARP_ON] != 0;
+    text(u, 6, 36, on ? "ACCESO" : "SPENTO", 2, on ? GREEN : DIM);
+    if (on && u->arp_busy) text(u, 90, 40, "SUONA", 1, AMBER);
+    if (on && p[TFM_P_ARP_LATCH]) text(u, 140, 40, "LATCH", 1, ACCENT);
+    /* anteprima del percorso: 16 passi */
+    uint8_t seq[16], lo, hi;
+    arp_preview(u, seq, 16, &lo, &hi);
+    int bx = 6, by = 56, bw = 228, bh = 84;
+    frame(u, bx, by, bw, bh, PANEL);
+    int span = hi > lo ? hi - lo : 1;
+    float g = 0.05f + (float)p[TFM_P_ARP_GATE] * (0.95f / 127.f);
+    int cw = (bw - 8) / 16;
+    for (unsigned k = 0; k < 16; k++) {
+        int yy = by + bh - 10 - (int)((float)(seq[k] - lo) / (float)span * (float)(bh - 20));
+        int w = (int)((float)cw * g);
+        if (w < 2) w = 2;
+        fill(u, bx + 4 + (int)k * cw, yy, w, 5, on ? knob_color[k % 4] : DIM);
+    }
+    tempo_text(u, 6, 150, TFM_P_ARP_RATE);
+    text(u, 6, 172, u->section == S_ARP ? "ARP = ACCENDI/SPEGNI" : "", 1, DIM);
+    page_dots(u, 2, u->page[S_ARP]);
+    footer(u, P_ARP[u->page[S_ARP]]);
+}
+
+static void draw_steps(tfm_ui *u, int bx, int by, int bw, int bh, unsigned first, unsigned count, int cursor)
+{
+    unsigned len = seq_len_ui(u);
+    int lo = 127, hi = 0;
+    for (unsigned i = 0; i < len; i++) if (u->seq.gate[i]) { if (u->seq.note[i] < lo) lo = u->seq.note[i]; if (u->seq.note[i] > hi) hi = u->seq.note[i]; }
+    if (lo > hi) { lo = 48; hi = 72; }
+    if (hi - lo < 12) { int m = (lo + hi) / 2; lo = m - 6; hi = m + 6; }
+    frame(u, bx, by, bw, bh, PANEL);
+    int cw = (bw - 4) / (int)count;
+    if (cw < 1) cw = 1;
+    for (unsigned k = 0; k < count; k++) {
+        unsigned st = first + k;
+        if (st >= len) break;
+        int x = bx + 2 + (int)k * cw;
+        if (cursor && st == u->cursor) fill(u, x, by + 1, cw, bh - 2, PANEL);
+        if (u->playing && st == u->play_step) fill(u, x, by + bh - 4, cw, 3, AMBER);
+        uint8_t gt = u->seq.gate[st];
+        if (gt == TFM_GATE_REST) { fill(u, x, by + bh / 2, cw > 2 ? cw - 1 : 1, 1, DIM); continue; }
+        int yy = by + bh - 10 - (int)((float)(u->seq.note[st] - lo) / (float)(hi - lo) * (float)(bh - 20));
+        uint16_t c = gt == TFM_GATE_TIE ? ACCENT : (st % 4 == 0 ? GREEN : knob_color[2]);
+        int w = gt == TFM_GATE_TIE ? cw : (cw > 2 ? cw - 1 : 1);
+        if (gt == TFM_GATE_TIE && k) fill(u, x - 1, yy + 1, 2, 2, ACCENT);
+        fill(u, x, yy, w, 4, c);
+    }
+}
+static void draw_seq(tfm_ui *u)
+{
+    static const char *const sub[3] = { "1 SEQUENZA", "2 TEMPO", "3 PASSI" };
+    unsigned pg = u->page[S_SEQ], len = seq_len_ui(u);
+    header(u, "SEQ", sub[pg]);
+    char s[16];
+    text(u, 6, 36, u->playing ? "PLAY" : "STOP", 2, u->playing ? GREEN : DIM);
+    if (u->rec) text(u, 66, 36, "REC", 2, 0xf800);
+    num_text(s, (u->playing ? u->play_step : u->cursor) + 1u);
+    unsigned l = (unsigned)tfm_strlen(s);
+    s[l++] = '/';
+    num_text(s + l, len);
+    text(u, 234 - text_w(s, 2), 36, s, 2, TEXT);
+    if (pg == 2) {   /* finestra di 16 passi attorno al cursore */
+        unsigned first = (u->cursor / 16) * 16;
+        draw_steps(u, 6, 56, 228, 84, first, 16, 1);
+        char nn[8];
+        if (u->seq.gate[u->cursor] == TFM_GATE_REST) tfm_strcpy(nn, "PAUSA");
+        else note_text(nn, u->seq.note[u->cursor]);
+        int x = text(u, 6, 148, nn, 3, AMBER);
+        text(u, x + 10, 155, L_GATE[u->seq.gate[u->cursor] % 3], 1, ACCENT);
+        text(u, 6, 176, u->rec ? "SUONA: SCRIVE E AVANZA" : "TASTI = NOTA DEL PASSO", 1, DIM);
+    } else {
+        draw_steps(u, 6, 56, 228, 84, 0, len < 16 ? 16 : len, 0);
+        if (pg == 0) {
+            text(u, 6, 150, u->patch.p[TFM_P_SEQ_NOTE] ? "RELA: I TASTI TRASPONGONO" : "ABS: NOTE COME SCRITTE", 1, TEXT);
+            text(u, 6, 166, "PLAY = AVVIA  REC = SCRIVI", 1, DIM);
+        } else {
+            tempo_text(u, 6, 150, TFM_P_SEQ_RATE);
+        }
+    }
+    page_dots(u, 3, pg);
+    footer(u, P_SEQ[pg]);
+}
+static void draw_save(tfm_ui *u)
+{
+    char s[8] = "U01";
+    s[1] = (char)('0' + (u->save_slot + 1) / 10); s[2] = (char)('0' + (u->save_slot + 1) % 10);
+    header(u, "SALVA", "SELECT = SLOT");
+    int x = text(u, 6, 40, "SLOT", 1, DIM);
+    text(u, x + 8, 36, s, 2, ACCENT);
+    for (int k = 0; k < 4; k++) {   /* il nome, un carattere per knob */
+        char c[2] = { u->save_name[k], 0 };
+        int cx = 18 + k * 54;
+        fill(u, cx - 4, 120, 40, 3, knob_color[k]);
+        text(u, cx, 70, c[0] == ' ' ? "_" : c, 6, TEXT);
+    }
+    const user_preset *up = &u->user[u->save_slot];
+    if (up->used) { x = text(u, 6, 136, "SOVRASCRIVE", 1, AMBER); text(u, x + 8, 136, up->name, 1, TEXT); }
+    else text(u, 6, 136, "SLOT LIBERO", 1, GREEN);
+    text(u, 6, 156, "SAVE = CONFERMA", 2, TEXT);
+    text(u, 6, 178, "ALTRO TASTO = ANNULLA", 1, DIM);
+    footer(u, P_SAVE);
+}
+/* GLOBAL pagina 7: la scala sulla tastiera e l'accordo sulla tonica */
+static void draw_scale(tfm_ui *u)
+{
+    const uint8_t *p = u->patch.p;
+    unsigned sc = p[TFM_P_SCALE] % TFM_SCALES, root = p[TFM_P_ROOT] % 12, ch = p[TFM_P_CHORD] % TFM_CHORDS;
+    uint16_t m = tfm_scale_masks[sc];
+    static const uint8_t white[7] = { 0, 2, 4, 5, 7, 9, 11 };
+    static const int8_t bpos[12] = { -1, 0, -1, 1, -1, -1, 3, -1, 4, -1, 5, -1 };
+    int kx = 9, kw = 31, ky = 40, kh = 90;
+    uint8_t cht[12] = { 0 };
+    for (unsigned i = 0; i < 5 && tfm_chord_notes[ch][i] >= 0; i++) {   /* l'accordo sulla tonica, corretto dalla scala come nel motore */
+        unsigned v = root + (unsigned)tfm_chord_notes[ch][i];
+        for (unsigned d = 0; d < 12; d++) if ((m >> ((v - d - root + 24) % 12)) & 1) { v -= d; break; }
+        cht[v % 12] = 1;
+    }
+    for (unsigned w = 0; w < 7; w++) {
+        unsigned n = white[w];
+        int in = (m >> ((n - root + 12) % 12)) & 1;
+        fill(u, kx + (int)w * kw, ky, kw - 2, kh, in ? (n == root ? AMBER : TEXT) : DIM);
+        if (cht[n] && ch) fill(u, kx + (int)w * kw + 9, ky + kh - 16, 11, 8, 0xf800);
+    }
+    for (unsigned n = 0; n < 12; n++) {
+        if (bpos[n] < 0) continue;
+        int in = (m >> ((n - root + 12) % 12)) & 1;
+        int x = kx + (bpos[n] + 1) * kw - 10;
+        fill(u, x - 1, ky, 20, 56, BACK);
+        fill(u, x, ky, 18, 54, in ? (n == root ? AMBER : knob_color[0]) : 0x2104);
+        if (cht[n] && ch) fill(u, x + 4, ky + 40, 10, 8, 0xf800);
+    }
+    char s[24];
+    tfm_strcpy(s, L_ROOT[root]);
+    unsigned l = (unsigned)tfm_strlen(s);
+    s[l++] = ' ';
+    tfm_strcpy(s + l, tfm_scale_names[sc]);
+    int x = text(u, 6, 142, s, 2, TEXT);
+    if (ch) { x = text(u, x + 12, 142, tfm_chord_names[ch], 2, 0xf800); }
+    text(u, 6, 166, sc ? "I TASTI SEGUONO LA SCALA" : "CROMATICA: NESSUNA CORREZIONE", 1, DIM);
+}
+
 static void draw_info(tfm_ui *u)
 {
     static const char *const names[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "SAVE", "ARP", "SEQ", "PLAY", "REC" };
@@ -1130,6 +1571,9 @@ static void scene(tfm_ui *u)
     case S_INFO: draw_info(u); break;
     case S_FX: draw_fx(u); break;
     case S_LFO: draw_lfo(u); break;
+    case S_ARP: draw_arp(u); break;
+    case S_SEQ: draw_seq(u); break;
+    case S_SAVE: draw_save(u); break;
     default: draw_home(u); break;
     }
 }

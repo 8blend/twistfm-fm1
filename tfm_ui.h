@@ -18,7 +18,10 @@ enum { TFM_BTN_OCT_DOWN, TFM_BTN_OCT_UP, TFM_BTN_FX, TFM_BTN_SEL, TFM_BTN_ENV, T
 #define TFM_KEYS 27
 
 /* Eventi prodotti dall'interfaccia per il motore audio. */
-enum { TFM_EV_NONE, TFM_EV_NOTE_ON, TFM_EV_NOTE_OFF, TFM_EV_PARAM, TFM_EV_PATCH };
+/* PATCH: preset nuovo (parametri e passi: tfm_ui_patch, tfm_ui_seq); STEP: passo a cambiato; SEQ: tutti i passi;
+ * PLAY: sequencer avviato (a=1) o fermato; SAVE: salvare lo slot utente a (tfm_ui_user_blob) */
+enum { TFM_EV_NONE, TFM_EV_NOTE_ON, TFM_EV_NOTE_OFF, TFM_EV_PARAM, TFM_EV_PATCH, TFM_EV_STEP, TFM_EV_SEQ,
+       TFM_EV_PLAY, TFM_EV_SAVE };
 typedef struct { uint8_t type, a, b; } tfm_event;
 
 typedef struct tfm_ui tfm_ui;
@@ -43,5 +46,13 @@ const uint16_t *tfm_ui_framebuffer(const tfm_ui *u);
 /* LED: bit 0..13 tasti funzione, 14..40 tasti musicali. */
 uint64_t tfm_ui_leds(const tfm_ui *u);
 unsigned tfm_ui_preset_count(void);
+/* sequencer e preset utente (fase 5) */
+#define TFM_USER_SLOTS 16
+const tfm_seq *tfm_ui_seq(const tfm_ui *u);
+int tfm_ui_playing(const tfm_ui *u);
+void tfm_ui_set_play_state(tfm_ui *u, unsigned state);   /* tfm_play_state() del motore */
+unsigned tfm_ui_user_blob(const tfm_ui *u, unsigned slot, uint8_t *buf, unsigned max);   /* byte da salvare, 0 = vuoto */
+int tfm_ui_user_load(tfm_ui *u, unsigned slot, const uint8_t *buf, unsigned len);       /* 0 = ok */
+#define TFM_USER_BLOB_MAX 640u
 const char *tfm_ui_preset_name(unsigned index);
 #endif

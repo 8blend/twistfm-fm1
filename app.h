@@ -11,9 +11,12 @@
 #define APP_TOUCH                        /* velocity dai tasti (lib/touch.h) */
 #define APP_CANVAS_PX (240u * 40u)       /* lo schermo lo disegniamo noi a bande: alla piattaforma basta poco */
 
-/* oggetti salvati in flash: le impostazioni dell'app (per i preset, piu' avanti) e la calibrazione del pannello */
-enum { OBJ_SETTINGS, OBJ_PANEL, OBJ_NOBJ };
-#define APP_STORE_MAP {0xFC000u, 0xDC000u}
+/* oggetti salvati in flash: le impostazioni dell'app, la calibrazione del pannello e i 16 preset utente
+ * (U01..U16), ognuno con la sua coppia di settori da 4 KiB nell'area dati, sotto quella del pannello */
+enum { OBJ_SETTINGS, OBJ_PANEL, OBJ_USER0, OBJ_NOBJ = OBJ_USER0 + 16 };
+#define APP_STORE_MAP {0xFC000u, 0xDC000u, \
+    0xBC000u, 0xBE000u, 0xC0000u, 0xC2000u, 0xC4000u, 0xC6000u, 0xC8000u, 0xCA000u, \
+    0xCC000u, 0xCE000u, 0xD0000u, 0xD2000u, 0xD4000u, 0xD6000u, 0xD8000u, 0xDA000u}
 
 /* il contratto: la piattaforma chiama queste */
 void app_init(void);

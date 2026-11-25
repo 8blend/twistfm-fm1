@@ -260,6 +260,18 @@ struct tfm_engine {
     float vib_ph, vib_hold, trem_ph;
     float last_pitch;          /* l'ultima nota suonata: da qui parte il glide */
     uint32_t rnd;
+    /* --- fase 5: ingresso delle note (scala, accordo), arpeggiatore, sequencer --- */
+    tfm_seq seq;
+    uint8_t in_map[128][5];    /* le note che ogni tasto fa suonare (0xff = nessuna) */
+    uint8_t arp_held[16], arp_n, arp_keys, arp_vel, arp_restart, arp_par, arp_open;
+    uint8_t arp_out[8], arp_nout;
+    int16_t arp_walk;
+    uint32_t arp_k;
+    float arp_t;
+    uint8_t seq_run, seq_step, seq_restart, seq_par, seq_open, seq_nout;
+    int8_t seq_ping, seq_tr;
+    uint8_t seq_out[5];
+    float seq_t;
 };
 
 unsigned tfm_engine_size(void) { return (sizeof(tfm_engine) + 7u) & ~7u; }
@@ -474,8 +486,15 @@ void tfm_patch_init(tfm_patch *patch)
     p[TFM_P_MENV_D] = 64; p[TFM_P_MENV_R] = 40;
     p[TFM_P_VIB_RATE] = 70;
     p[TFM_P_TREM_RATE] = 60; p[TFM_P_TREM_PHASE] = 64;
+    /* fase 5: 120 BPM, arp e sequencer a 1/16, sequenza di 16 passi */
+    p[TFM_P_BPM] = 60;
+    p[TFM_P_ARP_RATE] = 9; p[TFM_P_ARP_GATE] = 80;
+    p[TFM_P_SEQ_LEN] = 15; p[TFM_P_SEQ_RATE] = 9; p[TFM_P_SEQ_GATE] = 90;
 }
 
+static void player_reset(tfm_engine *e);
+static void voice_off(tfm_engine *e, uint8_t note);
+static void release_list(tfm_engine *e, uint8_t *list, uint8_t *n);
 tfm_engine *tfm_engine_init(void *memory)
 {
     tfm_engine *e = (tfm_engine *)memory;
@@ -486,6 +505,8 @@ tfm_engine *tfm_engine_init(void *memory)
     }
     e->mono_note = -1;
     e->rnd = 2463534242u;   /* seme del generatore casuale */
+    player_reset(e);
+    tfm_seq_default(&e->seq);
     tfm_fx_init(&e->fx);
     tfm_patch_init(&e->patch);
     return e;
@@ -497,6 +518,22 @@ void tfm_set_param(tfm_engine *e, unsigned id, uint8_t value)
     if (id >= TFM_P_COUNT) return;
     if (value > 127) value = 127;
     if ((id == TFM_P_VOICE_MODE || id == TFM_P_VOICES) && e->patch.p[id] != value) tfm_all_notes_off(e);
+    if (id == TFM_P_ARP_ON && e->patch.p[id] != value) {   /* l'arp cambia stato: le note tenute ripartono pulite */
+        release_list(e, e->arp_out, &e->arp_nout);
+        e->arp_open = 0;
+        if (!value) e->arp_n = 0;
+        for (unsigned k = 0; k < 128; k++)
+            if (e->in_map[k][0] != 0xff) {
+                for (unsigned i = 0; i < 5 && e->in_map[k][i] != 0xff; i++) voice_off(e, e->in_map[k][i]);
+                tfm_memset(e->in_map[k], 0xff, 5);
+            }
+        e->arp_keys = 0;
+    }
+    if (id == TFM_P_ARP_LATCH && !value && e->patch.p[id] && !e->arp_keys) {   /* latch spento senza tasti: stop */
+        e->arp_n = 0;
+        release_list(e, e->arp_out, &e->arp_nout);
+        e->arp_open = 0;
+    }
     e->patch.p[id] = value;
     e->dirty = 1;
 }
@@ -624,9 +661,9 @@ static int mono_target(const tfm_engine *e)
     return best;
 }
 
-void tfm_note_on(tfm_engine *e, uint8_t note, uint8_t velocity)
+static void voice_on(tfm_engine *e, uint8_t note, uint8_t velocity)
 {
-    if (velocity == 0) { tfm_note_off(e, note); return; }
+    if (velocity == 0) { voice_off(e, note); return; }
     voice_layout l = layout_of(e);
     if (l.slots == 1) { /* modi monofonici: pila delle note tenute */
         unsigned j = 0;
@@ -668,7 +705,7 @@ void tfm_note_on(tfm_engine *e, uint8_t note, uint8_t velocity)
     play_slot(e, &l, (unsigned)best, note, velocity);
 }
 
-void tfm_note_off(tfm_engine *e, uint8_t note)
+static void voice_off(tfm_engine *e, uint8_t note)
 {
     voice_layout l = layout_of(e);
     if (l.slots == 1) {
@@ -691,9 +728,307 @@ void tfm_note_off(tfm_engine *e, uint8_t note)
 
 void tfm_all_notes_off(tfm_engine *e)
 {
+    player_reset(e);
     e->nheld = 0;
     e->mono_note = -1;
     for (unsigned i = 0; i < TFM_VOICES; i++) if (e->v[i].gate) release_voice(&e->v[i]);
+}
+
+/* =================== fase 5: scale, accordi, arpeggiatore, sequencer =================== */
+
+const char *const tfm_div_names[TFM_DIVS] = { "4BAR", "2BAR", "1BAR", "1/2", "1/3", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32" };
+static const float div_beats[TFM_DIVS] = { 16.f, 8.f, 4.f, 2.f, 4.f / 3.f, 1.f, 2.f / 3.f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f };
+const char *const tfm_arp_names[TFM_ARP_MODES] = { "UP", "DOWN", "UPDN", "RAND", "WALK", "CONV", "DIVG", "PLAY", "STUT", "ALL" };
+const char *const tfm_scale_names[TFM_SCALES] = {
+    "CHRO", "MAJR", "MINR", "DORI", "PHRY", "LYDI", "MIXO", "LOCR", "HARm", "MELm", "PNTM",
+    "PNTm", "BLUE", "GYPS", "HUNG", "DIMI", "DEBU", "NEAP", "DBLH", "ALTR", "PERS", "ENIG" };
+#define SC(a, b, c, d, e2, f, g, h, i, j, k, l) (uint16_t)((a) | (b) << 1 | (c) << 2 | (d) << 3 | (e2) << 4 | (f) << 5 | (g) << 6 | (h) << 7 | (i) << 8 | (j) << 9 | (k) << 10 | (l) << 11)
+const uint16_t tfm_scale_masks[TFM_SCALES] = {
+    SC(1,1,1,1,1,1,1,1,1,1,1,1),   /* cromatica */
+    SC(1,0,1,0,1,1,0,1,0,1,0,1),   /* maggiore */
+    SC(1,0,1,1,0,1,0,1,1,0,1,0),   /* minore naturale */
+    SC(1,0,1,1,0,1,0,1,0,1,1,0),   /* dorica */
+    SC(1,1,0,1,0,1,0,1,1,0,1,0),   /* frigia */
+    SC(1,0,1,0,1,0,1,1,0,1,0,1),   /* lidia */
+    SC(1,0,1,0,1,1,0,1,0,1,1,0),   /* misolidia */
+    SC(1,1,0,1,0,1,1,0,1,0,1,0),   /* locria */
+    SC(1,0,1,1,0,1,0,1,1,0,0,1),   /* minore armonica */
+    SC(1,0,1,1,0,1,0,1,0,1,0,1),   /* minore melodica */
+    SC(1,0,1,0,1,0,0,1,0,1,0,0),   /* pentatonica maggiore */
+    SC(1,0,0,1,0,1,0,1,0,0,1,0),   /* pentatonica minore */
+    SC(1,0,0,1,0,1,1,1,0,0,1,0),   /* blues */
+    SC(1,1,0,0,1,1,0,1,1,0,1,0),   /* gypsy (frigia dominante) */
+    SC(1,0,1,1,0,0,1,1,1,0,0,1),   /* ungherese minore */
+    SC(1,0,1,1,0,1,1,0,1,1,0,1),   /* diminuita (tono-semitono) */
+    SC(1,0,1,0,1,0,1,0,1,0,1,0),   /* esatonale (Debussy) */
+    SC(1,1,0,1,0,1,0,1,0,1,0,1),   /* napoletana maggiore */
+    SC(1,1,0,0,1,1,0,1,1,0,0,1),   /* doppia armonica */
+    SC(1,1,0,1,1,0,1,0,1,0,1,0),   /* alterata */
+    SC(1,1,0,0,1,1,1,0,1,0,0,1),   /* persiana */
+    SC(1,1,0,0,1,0,1,0,1,0,1,1) }; /* enigmatica */
+const char *const tfm_chord_names[TFM_CHORDS] = { "OFF", "MIN", "MIN7", "MIN9", "MAJ", "MAJ7", "MAJ9", "7SUS", "HOUS", "PWR", "DEBU", "NOIR" };
+const int8_t tfm_chord_notes[TFM_CHORDS][5] = {
+    { 0, -1, -1, -1, -1 }, { 0, 3, 7, -1, -1 }, { 0, 3, 7, 10, -1 }, { 0, 3, 7, 10, 14 },
+    { 0, 4, 7, -1, -1 }, { 0, 4, 7, 11, -1 }, { 0, 4, 7, 11, 14 }, { 0, 5, 7, 10, -1 },
+    { 0, 7, 10, 15, -1 }, { 0, 7, 12, -1, -1 }, { 0, 4, 7, 11, 18 }, { 0, 3, 7, 11, 14 } };
+
+void tfm_seq_default(tfm_seq *s)
+{
+    static const uint8_t n[16] = { 48, 48, 60, 48, 51, 48, 55, 48, 48, 60, 58, 48, 55, 53, 51, 46 };
+    static const uint8_t g[16] = { 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1 };
+    for (unsigned i = 0; i < TFM_SEQ_STEPS; i++) {
+        s->note[i] = i < 16 ? n[i] : 48;
+        s->gate[i] = i < 16 ? g[i] : TFM_GATE_TRIG;
+    }
+}
+
+static unsigned rnd_u(tfm_engine *e, unsigned n) { e->rnd = e->rnd * 1664525u + 1013904223u; return (e->rnd >> 16) % n; }
+
+/* la nota della scala piu' vicina, scendendo */
+static int quantize(const tfm_engine *e, int note)
+{
+    unsigned sc = e->patch.p[TFM_P_SCALE] % TFM_SCALES;
+    if (!sc) return note;
+    uint16_t m = tfm_scale_masks[sc];
+    int rel = (note - (int)(e->patch.p[TFM_P_ROOT] % 12) + 120) % 12;
+    for (int d = 0; d < 12; d++)
+        if (m & (1u << ((rel - d + 12) % 12))) return note - d;
+    return note;
+}
+/* tasto -> note da suonare: scala e accordo; restituisce quante */
+static unsigned expand(const tfm_engine *e, int note, uint8_t out[5])
+{
+    const int8_t *iv = tfm_chord_notes[e->patch.p[TFM_P_CHORD] % TFM_CHORDS];
+    int root = quantize(e, note);
+    unsigned n = 0;
+    for (unsigned i = 0; i < 5 && iv[i] >= 0; i++) {
+        int v = i ? quantize(e, root + iv[i]) : root;
+        if (v < 0 || v > 127) continue;
+        unsigned dup = 0;
+        for (unsigned j = 0; j < n; j++) if (out[j] == v) dup = 1;
+        if (!dup) out[n++] = (uint8_t)v;
+    }
+    for (unsigned i = n; i < 5; i++) out[i] = 0xff;
+    return n;
+}
+
+static void release_list(tfm_engine *e, uint8_t *list, uint8_t *n)
+{
+    for (unsigned i = 0; i < *n; i++) voice_off(e, list[i]);
+    *n = 0;
+}
+
+static void player_reset(tfm_engine *e)
+{
+    tfm_memset(e->in_map, 0xff, sizeof e->in_map);
+    e->arp_n = e->arp_keys = 0;
+    e->arp_nout = 0;
+    e->arp_open = 0;
+    e->seq_nout = 0;
+    e->seq_open = 0;
+}
+
+void tfm_note_on(tfm_engine *e, uint8_t note, uint8_t velocity)
+{
+    const uint8_t *p = e->patch.p;
+    if (velocity == 0) { tfm_note_off(e, note); return; }
+    if (note > 127) return;
+    if (e->seq_run && p[TFM_P_SEQ_NOTE]) {   /* sequencer RELA: il tasto traspone la sequenza */
+        e->seq_tr = (int8_t)((int)note - 60);
+        return;
+    }
+    if (e->in_map[note][0] != 0xff) tfm_note_off(e, note);
+    unsigned n = expand(e, note, e->in_map[note]);
+    if (p[TFM_P_ARP_ON]) {
+        if (p[TFM_P_ARP_LATCH] && e->arp_keys == 0) { e->arp_n = 0; }   /* latch: un accordo nuovo sostituisce il vecchio */
+        if (e->arp_n == 0) e->arp_restart = 1;
+        e->arp_keys++;
+        e->arp_vel = velocity;
+        for (unsigned i = 0; i < n; i++) {
+            unsigned dup = 0;
+            for (unsigned j = 0; j < e->arp_n; j++) if (e->arp_held[j] == e->in_map[note][i]) dup = 1;
+            if (!dup && e->arp_n < 16) e->arp_held[e->arp_n++] = e->in_map[note][i];
+        }
+        return;
+    }
+    for (unsigned i = 0; i < n; i++) voice_on(e, e->in_map[note][i], velocity);
+}
+
+void tfm_note_off(tfm_engine *e, uint8_t note)
+{
+    if (note > 127 || e->in_map[note][0] == 0xff) return;
+    uint8_t *m = e->in_map[note];
+    if (e->patch.p[TFM_P_ARP_ON]) {
+        if (e->arp_keys) e->arp_keys--;
+        if (!e->patch.p[TFM_P_ARP_LATCH]) {
+            for (unsigned i = 0; i < 5 && m[i] != 0xff; i++) {
+                unsigned j = 0;
+                for (unsigned k = 0; k < e->arp_n; k++) if (e->arp_held[k] != m[i]) e->arp_held[j++] = e->arp_held[k];
+                e->arp_n = (uint8_t)j;
+            }
+            if (!e->arp_n) { release_list(e, e->arp_out, &e->arp_nout); e->arp_open = 0; }
+        }
+    } else {
+        for (unsigned i = 0; i < 5 && m[i] != 0xff; i++) voice_off(e, m[i]);
+    }
+    tfm_memset(m, 0xff, 5);
+}
+
+/* un passo dell'arpeggiatore */
+static void arp_step(tfm_engine *e)
+{
+    const uint8_t *p = e->patch.p;
+    release_list(e, e->arp_out, &e->arp_nout);
+    unsigned n = e->arp_n;
+    if (!n) return;
+    uint8_t s[16];
+    for (unsigned i = 0; i < n; i++) {   /* ordinate per altezza */
+        uint8_t v = e->arp_held[i];
+        unsigned j = i;
+        while (j && s[j - 1] > v) { s[j] = s[j - 1]; j--; }
+        s[j] = v;
+    }
+    unsigned R = (unsigned)(p[TFM_P_ARP_RANGE] % 6) + 1, T = n * R, k = e->arp_k++, i = 0;
+    const uint8_t *src = s;
+    switch (p[TFM_P_ARP_MODE] % TFM_ARP_MODES) {
+    case 0: i = k % T; break;
+    case 1: i = T - 1 - k % T; break;
+    case 2: { unsigned per = T > 1 ? 2 * T - 2 : 1, j = k % per; i = j < T ? j : per - j; } break;
+    case 3: i = rnd_u(e, T); break;
+    case 4:
+        e->arp_walk += rnd_u(e, 2) ? 1 : -1;
+        if (e->arp_walk < 0) e->arp_walk = T > 1 ? 1 : 0;
+        if (e->arp_walk >= (int)T) e->arp_walk = (int16_t)(T > 1 ? T - 2 : 0);
+        i = (unsigned)e->arp_walk;
+        break;
+    case 5: { unsigned j = k % T; i = j & 1 ? T - 1 - j / 2 : j / 2; } break;
+    case 6: { unsigned j = T - 1 - k % T; i = j & 1 ? T - 1 - j / 2 : j / 2; } break;
+    case 7: i = k % T; src = e->arp_held; break;
+    case 8: i = (k / 2) % T; break;
+    default: {   /* ALL: tutte le note insieme, un'ottava per passo */
+        unsigned o = k % R;
+        for (unsigned j = 0; j < n && j < 8; j++) {
+            unsigned v = s[j] + 12 * o;
+            if (v <= 127) e->arp_out[e->arp_nout++] = (uint8_t)v;
+        }
+    } break;
+    }
+    if ((p[TFM_P_ARP_MODE] % TFM_ARP_MODES) != 9) {
+        unsigned v = src[i % n] + 12 * (i / n);
+        if (v <= 127) e->arp_out[e->arp_nout++] = (uint8_t)v;
+    }
+    for (unsigned j = 0; j < e->arp_nout; j++) voice_on(e, e->arp_out[j], e->arp_vel);
+    e->arp_open = 1;
+}
+
+static unsigned seq_len(const tfm_engine *e) { return (unsigned)(e->patch.p[TFM_P_SEQ_LEN] & 127) + 1; }
+/* il passo dopo 'cur' (peek: senza cambiare lo stato; RAND non si puo' prevedere) */
+static unsigned seq_next(tfm_engine *e, unsigned cur, int peek)
+{
+    unsigned len = seq_len(e);
+    if (cur >= len) cur = len - 1;
+    switch (e->patch.p[TFM_P_SEQ_DIR] % 4) {
+    case 1: return cur ? cur - 1 : len - 1;
+    case 2: {
+        int d = e->seq_ping ? e->seq_ping : 1;
+        if ((int)cur + d < 0 || (int)cur + d >= (int)len) d = -d;
+        if (!peek) e->seq_ping = (int8_t)d;
+        int nx = (int)cur + d;
+        return nx < 0 || nx >= (int)len ? 0u : (unsigned)nx;
+    }
+    case 3: return peek ? (cur + 1) % len : rnd_u(e, len);
+    default: return (cur + 1) % len;
+    }
+}
+static void seq_play_step(tfm_engine *e, unsigned st)
+{
+    uint8_t g = e->seq.gate[st];
+    int note = (int)e->seq.note[st] + (e->patch.p[TFM_P_SEQ_NOTE] ? e->seq_tr : 0);
+    if (note < 0) note = 0;
+    if (note > 127) note = 127;
+    if (g == TFM_GATE_REST) { release_list(e, e->seq_out, &e->seq_nout); e->seq_open = 0; return; }
+    uint8_t nw[5];
+    unsigned n = expand(e, note, nw);
+    if (g == TFM_GATE_TIE && e->seq_nout) {   /* legato: la nota nuova prima di lasciare la vecchia */
+        if (n && nw[0] == e->seq_out[0]) return;
+        uint8_t old[5], no = e->seq_nout;
+        for (unsigned i = 0; i < no; i++) old[i] = e->seq_out[i];
+        for (unsigned i = 0; i < n; i++) voice_on(e, nw[i], 100);
+        for (unsigned i = 0; i < no; i++) {
+            unsigned keep = 0;
+            for (unsigned j = 0; j < n; j++) if (nw[j] == old[i]) keep = 1;
+            if (!keep) voice_off(e, old[i]);
+        }
+    } else {
+        release_list(e, e->seq_out, &e->seq_nout);
+        for (unsigned i = 0; i < n; i++) voice_on(e, nw[i], 100);
+    }
+    for (unsigned i = 0; i < n; i++) e->seq_out[i] = nw[i];
+    e->seq_nout = (uint8_t)n;
+    e->seq_open = 1;
+}
+
+/* orologio: avanza arpeggiatore e sequencer di n campioni */
+static void player_tick(tfm_engine *e, unsigned n)
+{
+    const uint8_t *p = e->patch.p;
+    float beats = (float)n * (60.f + (float)p[TFM_P_BPM]) * (1.f / 60.f) / (float)TFM_SAMPLE_RATE;
+    float sw = (float)p[TFM_P_SWING] * (0.33f / 127.f);
+    if (p[TFM_P_ARP_ON] && e->arp_n) {
+        float base = div_beats[p[TFM_P_ARP_RATE] % TFM_DIVS];
+        float len = base * (e->arp_par ? 1.f - sw : 1.f + sw);
+        if (e->arp_restart) { e->arp_restart = 0; e->arp_t = 0.f; e->arp_par = 0; e->arp_k = 0; e->arp_walk = 0; arp_step(e); }
+        else {
+            e->arp_t += beats;
+            if (e->arp_t >= len) { e->arp_t -= len; if (e->arp_t > len) e->arp_t = 0.f; e->arp_par ^= 1u; arp_step(e); }
+        }
+        len = base * (e->arp_par ? 1.f - sw : 1.f + sw);
+        float g = 0.05f + (float)p[TFM_P_ARP_GATE] * (0.95f / 127.f);
+        if (e->arp_open && g < 0.99f && e->arp_t >= g * len) { release_list(e, e->arp_out, &e->arp_nout); e->arp_open = 0; }
+    }
+    if (e->seq_run) {
+        float base = div_beats[p[TFM_P_SEQ_RATE] % TFM_DIVS];
+        float len = base * (e->seq_par ? 1.f - sw : 1.f + sw);
+        if (e->seq_restart) {
+            e->seq_restart = 0; e->seq_t = 0.f; e->seq_par = 0; e->seq_ping = 1;
+            e->seq_step = (uint8_t)((p[TFM_P_SEQ_DIR] % 4) == 1 ? seq_len(e) - 1 : 0);
+            seq_play_step(e, e->seq_step);
+        } else {
+            e->seq_t += beats;
+            if (e->seq_t >= len) {
+                e->seq_t -= len;
+                if (e->seq_t > len) e->seq_t = 0.f;
+                e->seq_par ^= 1u;
+                e->seq_step = (uint8_t)seq_next(e, e->seq_step, 0);
+                seq_play_step(e, e->seq_step);
+            }
+        }
+        len = base * (e->seq_par ? 1.f - sw : 1.f + sw);
+        float g = 0.05f + (float)p[TFM_P_SEQ_GATE] * (0.95f / 127.f);
+        if (e->seq_open && g < 0.99f && e->seq_t >= g * len
+            && e->seq.gate[seq_next(e, e->seq_step, 1)] != TFM_GATE_TIE) {
+            release_list(e, e->seq_out, &e->seq_nout);
+            e->seq_open = 0;
+        }
+    }
+}
+
+void tfm_set_step(tfm_engine *e, unsigned step, uint8_t note, uint8_t gate)
+{
+    if (step >= TFM_SEQ_STEPS) return;
+    e->seq.note[step] = note > 127 ? 127 : note;
+    e->seq.gate[step] = gate > 2 ? 0 : gate;
+}
+void tfm_load_seq(tfm_engine *e, const tfm_seq *s) { e->seq = *s; }
+void tfm_transport(tfm_engine *e, int run)
+{
+    if (run && !e->seq_run) { e->seq_restart = 1; e->seq_tr = 0; }
+    if (!run && e->seq_run) { release_list(e, e->seq_out, &e->seq_nout); e->seq_open = 0; }
+    e->seq_run = run ? 1 : 0;
+}
+unsigned tfm_play_state(const tfm_engine *e)
+{
+    return (unsigned)e->seq_step | (unsigned)e->seq_run << 8 | (unsigned)(e->patch.p[TFM_P_ARP_ON] && e->arp_n) << 9;
 }
 
 /* Avanza un ADSR di un blocco e restituisce il livello 0..1 (filtro e modulazione). */
@@ -811,6 +1146,7 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
         unsigned n = frames - start < TFM_SUB ? frames - start : TFM_SUB;
         float dt = (float)n / (float)TFM_SAMPLE_RATE;
         int32_t *out = output + start * 2;
+        player_tick(e, n);   /* arpeggiatore e sequencer */
         /* --- LFO, vibrato, tremolo (globali) --- */
         mod_acc g = { {0}, {0}, 0, 0.f };
         for (unsigned k = 0; k < TFM_LFOS; k++) {
