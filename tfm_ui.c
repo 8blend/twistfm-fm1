@@ -323,6 +323,7 @@ tfm_ui *tfm_ui_init(void *memory)
     for (unsigned i = 0; i < TFM_USER_SLOTS; i++) tfm_strcpy(u->user[i].name, "----");
     u->set.magic = TFM_SETTINGS_MAGIC;
     u->set.note_out = 1;
+    u->set.theme = 2;   /* si parte col tema TWIST (display a LED) */
     load_preset(u, TFM_PRESET_COUNT > 1 ? 1 : 0);
     u->section = S_HOME;
     u->dirty = 1;
