@@ -506,7 +506,8 @@ void tfm_patch_init(tfm_patch *patch)
     p[TFM_P_BPM] = 60;
     p[TFM_P_ARP_RATE] = 9; p[TFM_P_ARP_GATE] = 80;
     p[TFM_P_SEQ_LEN] = 15; p[TFM_P_SEQ_RATE] = 9; p[TFM_P_SEQ_GATE] = 90;
-    p[TFM_P_GLIDE] = 40; p[TFM_P_BEND] = 2; p[TFM_P_DLY_DIV] = 7;   /* portamento spento ma pronto; eco 1/8 puntato */
+    p[TFM_P_GLIDE] = 40; p[TFM_P_BEND] = 2; p[TFM_P_DLY_DIV] = 7;
+    p[TFM_P_LFO1_DIV] = 5; p[TFM_P_LFO2_DIV] = 7; p[TFM_P_LFO3_DIV] = 3;   /* 1/4, 1/8, 1/2 */   /* portamento spento ma pronto; eco 1/8 puntato */
 }
 
 static void player_reset(tfm_engine *e);
@@ -791,7 +792,7 @@ void tfm_all_notes_off(tfm_engine *e)
 /* =================== fase 5: scale, accordi, arpeggiatore, sequencer =================== */
 
 const char *const tfm_div_names[TFM_DIVS] = { "4BAR", "2BAR", "1BAR", "1/2", "1/3", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32" };
-static const float div_beats[TFM_DIVS] = { 16.f, 8.f, 4.f, 2.f, 4.f / 3.f, 1.f, 2.f / 3.f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f };
+const float tfm_div_beats[TFM_DIVS] = { 16.f, 8.f, 4.f, 2.f, 4.f / 3.f, 1.f, 2.f / 3.f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f };
 const char *const tfm_dly_div_names[TFM_DLY_DIVS] = { "1/32", "1/16T", "1/16", "1/8T", "1/16D", "1/8", "1/4T", "1/8D", "1/4", "1/4D", "1/2" };
 const float tfm_dly_div_beats[TFM_DLY_DIVS] = { 0.125f, 1.f / 6.f, 0.25f, 1.f / 3.f, 0.375f, 0.5f, 2.f / 3.f, 0.75f, 1.f, 1.5f, 2.f };
 const char *const tfm_arp_names[TFM_ARP_MODES] = { "UP", "DOWN", "UPDN", "RAND", "WALK", "CONV", "DIVG", "PLAY", "STUT", "ALL" };
@@ -1037,7 +1038,7 @@ static void player_tick(tfm_engine *e, unsigned n)
     }
     float sw = (float)p[TFM_P_SWING] * (0.33f / 127.f);
     if (p[TFM_P_ARP_ON] && e->arp_n) {
-        float base = div_beats[p[TFM_P_ARP_RATE] % TFM_DIVS];
+        float base = tfm_div_beats[p[TFM_P_ARP_RATE] % TFM_DIVS];
         float len = base * (e->arp_par ? 1.f - sw : 1.f + sw);
         if (e->arp_restart) { e->arp_restart = 0; e->arp_t = 0.f; e->arp_par = 0; e->arp_k = 0; e->arp_walk = 0; arp_step(e); }
         else {
@@ -1049,7 +1050,7 @@ static void player_tick(tfm_engine *e, unsigned n)
         if (e->arp_open && g < 0.99f && e->arp_t >= g * len) { release_list(e, e->arp_out, &e->arp_nout); e->arp_open = 0; }
     }
     if (e->seq_run) {
-        float base = div_beats[p[TFM_P_SEQ_RATE] % TFM_DIVS];
+        float base = tfm_div_beats[p[TFM_P_SEQ_RATE] % TFM_DIVS];
         float len = base * (e->seq_par ? 1.f - sw : 1.f + sw);
         if (e->seq_restart) {
             e->seq_restart = 0; e->seq_t = 0.f; e->seq_par = 0; e->seq_ping = 1;
@@ -1084,7 +1085,10 @@ void tfm_set_step(tfm_engine *e, unsigned step, uint8_t note, uint8_t gate)
 void tfm_load_seq(tfm_engine *e, const tfm_seq *s) { e->seq = *s; }
 void tfm_transport(tfm_engine *e, int run)
 {
-    if (run && !e->seq_run) { e->seq_restart = 1; e->seq_tr = 0; }
+    if (run && !e->seq_run) {
+        e->seq_restart = 1; e->seq_tr = 0;
+        for (unsigned k = 0; k < TFM_LFOS; k++) if (e->patch.p[TFM_P_LFO1_SYNC + k]) e->lfo_ph[k] = 0.f;   /* LFO a tempo: ripartono col sequencer */
+    }
     if (!run && e->seq_run) { release_list(e, e->seq_out, &e->seq_nout); e->seq_open = 0; }
     e->seq_run = run ? 1 : 0;
 }
@@ -1320,7 +1324,10 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
             int used = 0;
             for (unsigned i = 0; i < TFM_LINKS; i++)
                 if (p[TFM_LFO_LINK(k, i)] && link_amt(p, TFM_LFO_LINK(k, i))) used = 1;
-            e->lfo_ph[k] += lfo_hz(q[0]) * dt;
+            float hz = lfo_hz(q[0]);
+            if (p[TFM_P_LFO1_SYNC + k])   /* a tempo: una divisione della nota da 1/4 */
+                hz = (float)tfm_bpm_now(e) * (1.f / 60.f) / tfm_div_beats[p[TFM_P_LFO1_DIV + k] % TFM_DIVS];
+            e->lfo_ph[k] += hz * dt;
             if (e->lfo_ph[k] >= 1.f) { e->lfo_ph[k] -= (float)(int)e->lfo_ph[k]; e->lfo_hold[k] = rnd_bipolar(e); }
             if (!used) continue;
             float val = lfo_mode(q[2] % TFM_LFO_MODES, lfo_shape(q[1] % TFM_LFO_SHAPES, e->lfo_ph[k], e->lfo_hold[k]));

@@ -88,7 +88,8 @@ static const char *const L_VMODE[3] = { "BIPO", "UP", "DOWN" };
 static const char *const L_GLMODE[2] = { "ALWS", "LEGT" };
 /* comandi che non sono parametri del preset */
 enum { V_STEP = 0x400, V_NOTE, V_GATE, V_CLEAR, V_SLOT, V_CH1, V_CH2, V_CH3, V_CH4,
-       V_INCH, V_OUTCH, V_NOTEOUT, V_THRU, V_SYNC, V_CLKOUT, V_DTIME, V_THEME };
+       V_INCH, V_OUTCH, V_NOTEOUT, V_THRU, V_SYNC, V_CLKOUT, V_DTIME, V_THEME,
+       V_LFORATE, V_LFORUN = V_LFORATE + 3 };
 static const char *const L_BEND[25] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
                                         "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24" };
 static const char *const L_RANGE[6] = { "1", "2", "3", "4", "5", "6" };
@@ -106,7 +107,7 @@ static const pdesc P_EDIT[2][4] = {
     { {T_LIST, OPID(TFM_OPP_KSL), "KSL", L_KSL, 4}, {T_LIST, OPID(TFM_OPP_KSR), "KSR", L_OFFON, 2}, {T_F, FB_ID, "FB", 0, 0}, {T_NONE, 0, "", 0, 0} } };
 static const pdesc P_ENV[4] = { {T_F, OPID(TFM_OPP_A), "ATK", 0, 0}, {T_F, OPID(TFM_OPP_D), "DEC", 0, 0}, {T_F, OPID(TFM_OPP_S), "SUS", 0, 0}, {T_F, OPID(TFM_OPP_R), "REL", 0, 0} };
 static const pdesc P_FILTER[3][4] = {
-    { {T_LIST, TFM_P_FLT_TYPE, "TYPE", L_FT, 15}, {T_F, TFM_P_CUTOFF, "CUTOFF", 0, 0}, {T_F, TFM_P_RES, "RES", 0, 0}, {T_F, TFM_P_FLT_ENV, "ENV", 0, 0} },
+    { {T_F, TFM_P_CUTOFF, "CUTOFF", 0, 0}, {T_F, TFM_P_RES, "RES", 0, 0}, {T_F, TFM_P_FLT_ENV, "ENV", 0, 0}, {T_LIST, TFM_P_FLT_TYPE, "TYPE", L_FT, 15} },
     { {T_F, TFM_P_HEAT, "HEAT", 0, 0}, {T_LIST, TFM_P_FLAVOUR, "FLAV", L_FLAV, 2}, {T_F, TFM_P_WOBBLE, "WOBBLE", 0, 0}, {T_LIST, TFM_P_KEYTRACK, "KTRACK", L_TEN, 11} },
     { {T_F, TFM_P_FLT_A, "ATK", 0, 0}, {T_F, TFM_P_FLT_D, "DEC", 0, 0}, {T_F, TFM_P_FLT_S, "SUS", 0, 0}, {T_F, TFM_P_FLT_R, "REL", 0, 0} } };
 static const pdesc P_GLO[11][4] = {
@@ -125,6 +126,10 @@ static const pdesc P_GLO[11][4] = {
     { {T_STEP, V_THEME, "THEME", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} } };
 #define GLO_PAGES 11
 enum { GP_PORTA = 5, GP_RISE, GP_SCALE, GP_MIDI, GP_SYNC, GP_DISPLAY };
+/* GLOBAL a gruppi, come FX: il tasto GLO cambia gruppo, SELECT le pagine del gruppo */
+static const uint8_t glo_first[6] = { 0, 3, 5, 7, 8, 10 };   /* VOICES, MOTION, PITCH, SCALE, MIDI, DISPLAY */
+static const uint8_t glo_size[6] = { 3, 2, 2, 1, 2, 1 };
+static unsigned glo_group(unsigned pg) { unsigned g = 0; while (g < 5 && pg >= glo_first[g + 1]) g++; return g; }
 static const pdesc P_FX[7][4] = {
     { {T_LIST, TFM_P_DIST_TYPE, "TYPE", L_DIST, TFM_DIST_SHAPES}, {T_F, TFM_P_DIST_DRIVE, "DRIVE", 0, 0}, {T_F, TFM_P_DIST_TEMP, "TEMP", 0, 0}, {T_F, TFM_P_DIST_MIX, "MIX", 0, 0} },
     { {T_F, TFM_P_PH_RATE, "RATE", 0, 0}, {T_F, TFM_P_PH_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_PH_FB, "FDBK", 0, 0}, {T_F, TFM_P_PH_MIX, "MIX", 0, 0} },
@@ -134,8 +139,8 @@ static const pdesc P_FX[7][4] = {
     { {T_F, TFM_P_REV_PREDLY, "PREDLY", 0, 0}, {T_F, TFM_P_REV_MOD, "MOD", 0, 0}, {T_F, TFM_P_REV_SHIM, "SHIMMR", 0, 0}, {T_NONE, 0, "", 0, 0} },
     { {T_LIST, TFM_P_FX_SLOT1, "SLOT 1", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT2, "SLOT 2", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT3, "SLOT 3", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT4, "SLOT 4", L_SLOT, 5} } };
 /* LFO: per ognuno dei 3 LFO una pagina principale e due di chain (4 collegamenti), poi l'inviluppo di modulazione */
-#define LMAIN(k) { {T_F, TFM_LFO_BASE(k), "RATE", 0, 0}, {T_LIST, TFM_LFO_BASE(k) + 1, "SHAPE", L_LSHAPE, TFM_LFO_SHAPES}, \
-                   {T_LIST, TFM_LFO_BASE(k) + 2, "MODE", L_LMODE, TFM_LFO_MODES}, {T_LIST, TFM_LFO_BASE(k) + 3, "RETRIG", L_OFFON, 2} }
+#define LMAIN(k) { {T_STEP, V_LFORATE + (k), "RATE", 0, 0}, {T_LIST, TFM_LFO_BASE(k) + 1, "SHAPE", L_LSHAPE, TFM_LFO_SHAPES}, \
+                   {T_LIST, TFM_LFO_BASE(k) + 2, "MODE", L_LMODE, TFM_LFO_MODES}, {T_STEP, V_LFORUN + (k), "RUN", 0, 0} }
 #define LCH(base, pg, la, lb) { {T_LIST, (base) + 4 * (pg), "DEST " la, tfm_mod_target_names, TFM_MOD_TARGETS}, {T_AMT, (base) + 4 * (pg) + 1, "AMT " la, 0, 41}, \
                               {T_LIST, (base) + 4 * (pg) + 2, "DEST " lb, tfm_mod_target_names, TFM_MOD_TARGETS}, {T_AMT, (base) + 4 * (pg) + 3, "AMT " lb, 0, 41} }
 static const pdesc P_LFO[12][4] = {
@@ -450,6 +455,22 @@ static void turn_virtual(tfm_ui *u, unsigned id, int delta)
             set_param(u, TFM_P_DLY_DIV, d < 0 ? 0 : d >= TFM_DLY_DIVS ? TFM_DLY_DIVS - 1 : d);
         } else set_param(u, TFM_P_DLY_TIME, u->patch.p[TFM_P_DLY_TIME] + delta);
         break;
+    case V_LFORATE: case V_LFORATE + 1: case V_LFORATE + 2: {   /* Hz liberi, o divisione se a tempo */
+        unsigned k = id - V_LFORATE;
+        if (u->patch.p[TFM_P_LFO1_SYNC + k]) {
+            int d = (int)(u->patch.p[TFM_P_LFO1_DIV + k] % TFM_DIVS) + (delta > 0 ? 1 : -1);
+            set_param(u, (int)(TFM_P_LFO1_DIV + k), d < 0 ? 0 : d >= TFM_DIVS ? TFM_DIVS - 1 : d);
+        } else set_param(u, (int)TFM_LFO_BASE(k), u->patch.p[TFM_LFO_BASE(k)] + delta);
+        break;
+    }
+    case V_LFORUN: case V_LFORUN + 1: case V_LFORUN + 2: {   /* FREE, RETRIG, SYNC, SYNC + RETRIG */
+        unsigned k = id - V_LFORUN;
+        int r = (u->patch.p[TFM_LFO_BASE(k) + 3] ? 1 : 0) + (u->patch.p[TFM_P_LFO1_SYNC + k] ? 2 : 0) + (delta > 0 ? 1 : -1);
+        r = r < 0 ? 0 : r > 3 ? 3 : r;
+        set_param(u, (int)(TFM_LFO_BASE(k) + 3), r & 1);
+        set_param(u, (int)(TFM_P_LFO1_SYNC + k), r >> 1);
+        break;
+    }
     case V_CH1: case V_CH2: case V_CH3: case V_CH4: {
         static const char set[] = SAVE_CHARS;
         int n = (int)sizeof set - 1, k = (int)(id - V_CH1), cur = 0;
@@ -516,6 +537,16 @@ static void value_text(const tfm_ui *u, const pdesc *d, char *out)
         case V_THRU: tfm_strcpy(out, u->set.thru ? "ON" : "OFF"); break;
         case V_SYNC: tfm_strcpy(out, u->set.sync ? "EXT" : "INT"); break;
         case V_CLKOUT: tfm_strcpy(out, u->set.clk_out ? "ON" : "OFF"); break;
+        case V_LFORATE: case V_LFORATE + 1: case V_LFORATE + 2: {
+            unsigned k = (unsigned)id - V_LFORATE;
+            if (u->patch.p[TFM_P_LFO1_SYNC + k]) tfm_strcpy(out, tfm_div_names[u->patch.p[TFM_P_LFO1_DIV + k] % TFM_DIVS]);
+            else num_text(out, u->patch.p[TFM_LFO_BASE(k)]);
+        } break;
+        case V_LFORUN: case V_LFORUN + 1: case V_LFORUN + 2: {
+            static const char *const rn[4] = { "FREE", "RTRG", "SYNC", "S+RT" };
+            unsigned k = (unsigned)id - V_LFORUN;
+            tfm_strcpy(out, rn[(u->patch.p[TFM_LFO_BASE(k) + 3] ? 1 : 0) + (u->patch.p[TFM_P_LFO1_SYNC + k] ? 2 : 0)]);
+        } break;
         case V_THEME: { static const char *const tn[3] = { "DARK", "70S", "TWST" }; tfm_strcpy(out, tn[u->set.theme % 3]); } break;
         case V_DTIME:
             if (u->patch.p[TFM_P_DLY_SYNC]) tfm_strcpy(out, tfm_dly_div_names[u->patch.p[TFM_P_DLY_DIV] % TFM_DLY_DIVS]);
@@ -584,6 +615,9 @@ void tfm_ui_encoder(tfm_ui *u, unsigned enc, int delta)
             unsigned pg = u->page[S_FX];
             if (pg == 2 || pg == 3) u->page[S_FX] = (uint8_t)(pg ^ 1u);
             else if (pg == 4 || pg == 5) u->page[S_FX] = (uint8_t)(pg == 4 ? 5 : 4);
+        } else if (u->section == S_GLO) {   /* solo dentro il gruppo */
+            unsigned g = glo_group(u->page[S_GLO]), n = glo_size[g], i = u->page[S_GLO] - glo_first[g];
+            u->page[S_GLO] = (uint8_t)(glo_first[g] + (i + (delta > 0 ? 1 : n - 1)) % n);
         } else if (u->section == S_LFO) {   /* solo fra le 3 pagine dell'LFO (o del MOD ENV) scelto */
             unsigned pg = u->page[S_LFO], g = pg / 3 * 3;
             u->page[S_LFO] = (uint8_t)(g + (pg - g + (delta > 0 ? 1 : 2)) % 3);
@@ -630,7 +664,10 @@ void tfm_ui_button(tfm_ui *u, unsigned b, int down)
         break;
     }
     case TFM_BTN_SEL: goto_section(u, S_FILTER, 0); break;
-    case TFM_BTN_GLO: goto_section(u, S_GLO, 0); break;
+    case TFM_BTN_GLO:   /* VOICES > MOTION > PITCH > SCALE > MIDI > DISPLAY */
+        if (u->section == S_GLO) u->page[S_GLO] = glo_first[(glo_group(u->page[S_GLO]) + 1) % 6];
+        u->section = S_GLO; u->touched = -1; u->dirty = 1;
+        break;
     case TFM_BTN_LFO: /* LFO 1 > LFO 2 > LFO 3 > MOD ENV; le pagine di chain con SELECT */
         if (u->section == S_LFO) u->page[S_LFO] = (uint8_t)((u->page[S_LFO] / 3 + 1) % 4 * 3);
         u->section = S_LFO; u->touched = -1; u->dirty = 1;
@@ -1131,14 +1168,14 @@ static void draw_response(tfm_ui *u, int bx, int by, int bw, int bh)
         int yy = zero - (int)(db * (float)(bh / 3) / 18.f);
         if (yy < by + 1) yy = by + 1;
         if (yy > by + bh - 2) yy = by + bh - 2;
-        if (i) line(u, bx + i, py, bx + 1 + i, yy, knob_color[1]);
+        if (i) line(u, bx + i, py, bx + 1 + i, yy, knob_color[0]);   /* il colore di CUTOFF (K1) */
         py = yy;
     }
 }
 
 static void draw_filter(tfm_ui *u)
 {
-    static const char *const sub[3] = { "1 FILTER", "2 CHARACTER", "3 ENVELOPE" };
+    static const char *const sub[3] = { "FILTER", "CHARACTER", "ENVELOPE" };
     const uint8_t *p = u->patch.p;
     header(u, "FILTER", p[TFM_P_FLAVOUR] ? "MS20" : "LIQUID");
     if (u->page[S_FILTER] == 2)
@@ -1240,10 +1277,16 @@ static void draw_lfo(tfm_ui *u)
         if (sp == 0) {
             draw_curve(u, 6, 36, 228, 92, sh, md, 2.f, knob_color[k]);
             char hz[12];
-            fmt_fixed(hz, lfo_rate_hz(q[0]), 2);
-            int x = text(u, 6, 140, hz, 2, TEXT);
-            text(u, x + 4, 147, "HZ", 1, DIM);
-            text(u, 120, 140, q[3] ? "RETRIG" : "FREE", 2, q[3] ? AMBER : DIM);
+            int syn = p[TFM_P_LFO1_SYNC + k] != 0;
+            if (syn) {
+                int x = text(u, 6, 140, tfm_div_names[p[TFM_P_LFO1_DIV + k] % TFM_DIVS], 2, TEXT);
+                text(u, x + 4, 147, "SYNC", 1, GREEN);
+            } else {
+                fmt_fixed(hz, lfo_rate_hz(q[0]), 2);
+                int x = text(u, 6, 140, hz, 2, TEXT);
+                text(u, x + 4, 147, "HZ", 1, DIM);
+            }
+            text(u, 130, 140, q[3] ? "RETRIG" : "FREE", 2, q[3] ? AMBER : DIM);
             /* collegamenti attivi in breve */
             unsigned n = 0;
             for (unsigned i = 0; i < TFM_LINKS; i++)
@@ -1266,6 +1309,7 @@ static void draw_lfo(tfm_ui *u)
     footer(u, P_LFO[pg]);
 }
 
+static void glo_dots(tfm_ui *u);
 static void draw_glo_mod(tfm_ui *u, unsigned pg)
 {
     const uint8_t *p = u->patch.p;
@@ -1352,11 +1396,16 @@ static void draw_glo_mod(tfm_ui *u, unsigned pg)
         text(u, 6, 140, "RISE: SCOOP UP AT START", 1, p[TFM_P_RISE] ? TEXT : DIM);
         text(u, 6, 154, "FALL: DROP AFTER RELEASE", 1, p[TFM_P_FALL] ? TEXT : DIM);
     }
-    page_dots(u, GLO_PAGES, pg);
+    glo_dots(u);
     footer(u, P_GLO[pg]);
 }
 
 static void draw_scale(tfm_ui *u);
+static void glo_dots(tfm_ui *u)
+{
+    unsigned g = glo_group(u->page[S_GLO]);
+    page_dots(u, glo_size[g], u->page[S_GLO] - glo_first[g]);
+}
 static void draw_midi(tfm_ui *u, unsigned pg)
 {
     const tfm_settings *s = &u->set;
@@ -1373,7 +1422,7 @@ static void draw_midi(tfm_ui *u, unsigned pg)
         num_text(c + 9, s->out_ch + 1u);
         text(u, 6, 134, c, 1, TEXT);
         text(u, 6, 146, s->note_out ? "NOTES: KEYS -> USB" : "NOTES: OFF", 1, s->note_out ? GREEN : DIM);
-        text(u, 6, 166, "PITCH BEND: SEE PAGE 6", 1, DIM);
+        text(u, 6, 166, "PITCH BEND RANGE: GLO > PITCH", 1, DIM);
     } else {
         text(u, 6, 38, s->sync ? "EXTERNAL CLOCK" : "INTERNAL CLOCK", 2, AMBER);
         if (s->sync) {
@@ -1394,15 +1443,15 @@ static void draw_midi(tfm_ui *u, unsigned pg)
             if (s->clk_out) text(u, 6, 162, "WITH START/STOP ON PLAY", 1, DIM);
         }
     }
-    page_dots(u, GLO_PAGES, pg);
+    glo_dots(u);
     footer(u, P_GLO[pg]);
 }
 static void draw_glo(tfm_ui *u)
 {
-    static const char *const sub[GLO_PAGES] = { "1 VOICES", "2 LAYER", "3 LEVEL", "4 VIBRATO", "5 TREMOLO", "6 PORTAMENTO",
-                                                "7 RISE/FALL", "8 SCALE", "9 MIDI", "10 SYNC", "11 DISPLAY" };
+    static const char *const sub[GLO_PAGES] = { "VOICES", "LAYER", "LEVEL", "VIBRATO", "TREMOLO", "PORTAMENTO",
+                                                "RISE/FALL", "SCALE", "MIDI", "SYNC", "DISPLAY" };
     header(u, "GLOBAL", sub[u->page[S_GLO]]);
-    if (u->page[S_GLO] == GP_SCALE) { draw_scale(u); page_dots(u, GLO_PAGES, GP_SCALE); footer(u, P_GLO[GP_SCALE]); return; }
+    if (u->page[S_GLO] == GP_SCALE) { draw_scale(u); glo_dots(u); footer(u, P_GLO[GP_SCALE]); return; }
     if (u->page[S_GLO] == GP_MIDI || u->page[S_GLO] == GP_SYNC) { draw_midi(u, u->page[S_GLO]); return; }
     if (u->page[S_GLO] == GP_DISPLAY) {   /* tema dello schermo */
         text(u, 6, 38, "THEME", 2, AMBER);
@@ -1411,7 +1460,7 @@ static void draw_glo(tfm_ui *u)
         for (int k = 0; k < 4; k++) fill(u, 6 + k * 57, 84, 52, 40, knob_color[k]);
         if (th->stripe[0]) for (int k = 0; k < 4; k++) fill(u, 6, 134 + k * 6, 228, 4, th->stripe[k]);
         text(u, 6, 166, "SAVED ON THE FM-1, NOT IN PRESETS", 1, DIM);
-        page_dots(u, GLO_PAGES, GP_DISPLAY);
+        glo_dots(u);
         footer(u, P_GLO[GP_DISPLAY]);
         return;
     }
@@ -1432,14 +1481,14 @@ static void draw_glo(tfm_ui *u)
     }
     text(u, 6, 74, L_MODE_LONG[m], 2, TEXT);
     if (mode_is_mono(u)) { text(u, 6, 94, "PRIORITY", 1, DIM); text(u, 60, 94, L_PRIO[p[TFM_P_PRIO] > 2 ? 0 : p[TFM_P_PRIO]], 1, AMBER); }
-    else { text(u, 6, 94, "NOTES STACKED", 1, DIM); char n[2] = { (char)('0' + (m == 2 ? 4 : m == 3 ? 2 : used)), 0 }; text(u, 84, 94, n, 1, AMBER); }
+    else { text(u, 6, 94, "MAX NOTES", 1, DIM); char n[2] = { (char)('0' + (m == 2 ? 4 : m == 3 ? 2 : used)), 0 }; text(u, 66, 94, n, 1, AMBER); }
     char tv[8];
     value_text(u, &P_GLO[1][3], tv);
     text(u, 6, 120, "LAYER 2", 1, DIM);
     int x = text(u, 6, 134, p[TFM_P_ALGO2] ? "PARALLEL" : "SERIES", 2, TEXT);
     x = text(u, x + 12, 134, tv, 2, knob_color[3]);
     text(u, x + 4, 141, "ST", 1, DIM);
-    page_dots(u, GLO_PAGES, u->page[S_GLO]);
+    glo_dots(u);
     footer(u, P_GLO[u->page[S_GLO]]);
 }
 
