@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Firmware "stile TwistFM" per M-VAVE FM-1, sulla piattaforma fm1-base (MPL-2.0).
+/* Firmware TWISTER ("stile TwistFM") per M-VAVE FM-1, sulla piattaforma fm1-base (MPL-2.0).
  * Questo header e' la meta' dell'app del contratto con la piattaforma (device/unity.c). */
 #pragma once
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "TWISTFM"
+#define APP_NAME "TWISTER"
 #define APP_SPLASH_RGB RGB(253, 160, 0)
 #define APP_BLOCK 256u                   /* frame per blocco audio: 5.8 ms a 44.1 kHz */
 #define APP_TOUCH                        /* velocity dai tasti (lib/touch.h) */

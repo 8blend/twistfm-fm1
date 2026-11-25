@@ -100,7 +100,7 @@ struct tfm_ui {
     /* due buffer di banda da 240 x 16 pixel: mentre il DMA invia uno, si disegna l'altro */
     uint16_t bands[2][TFM_SCREEN_W * 16];
     uint16_t *band;
-    unsigned band_top;
+    unsigned band_top, which;
     tfm_blit_fn blit;
 #ifndef TFM_UI_NO_FRAMEBUFFER
     uint16_t fb[TFM_SCREEN_W * TFM_SCREEN_H];
@@ -921,18 +921,22 @@ uint32_t tfm_ui_draw(tfm_ui *u)
     if (!u->dirty) return 0;
     u->dirty = 0;
     int y0 = -1, y1 = -1;
-    unsigned which = 0;
     for (unsigned b = 0; b < TFM_SCREEN_H / 16; b++) {
         u->band_top = b * 16;
-        u->band = u->bands[which];
+        u->band = u->bands[u->which];
         scene(u);
         uint32_t h = 2166136261u;
         for (unsigned i = 0; i < TFM_SCREEN_W * 16; i++) h = (h ^ u->band[i]) * 16777619u;
         if (h == u->band_hash[b]) continue;  /* banda invariata: niente trasferimento */
         u->band_hash[b] = h;
 #ifndef TFM_UI_NO_FRAMEBUFFER
-        tfm_memcpy(u->fb + b * 16 * TFM_SCREEN_W, u->band, sizeof u->band);
+        tfm_memcpy(u->fb + b * 16 * TFM_SCREEN_W, u->band, sizeof u->bands[0]);
 #endif
+        if (u->blit) {
+            /* allo schermo (DMA); la prossima banda va nell'altro buffer, mai in quello in volo */
+            u->blit(0, b * 16, TFM_SCREEN_W, 16, u->band);
+            u->which ^= 1u;
+        }
         if (y0 < 0) y0 = (int)b * 16;
         y1 = (int)b * 16 + 16;
     }

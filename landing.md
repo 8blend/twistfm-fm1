@@ -1,6 +1,6 @@
-# TWISTFM
+# TWISTER
 
-TWISTFM is an unofficial firmware for the M-VAVE FM-1, inspired by the OPL3 sound of the Twisted Electrons TWISTfm:
+TWISTER is an unofficial firmware for the M-VAVE FM-1, inspired by the OPL3 sound of the Twisted Electrons TWISTfm:
 eight voices, a 4-operator layer and a 2-operator layer with the eight OPL3 waveforms, a 4-pole filter per voice
 with 15 modes (LIQUID and MS20 flavours, HEAT), and a chain of four effects: distortion, phaser, tape echo and
 reverb (room, plate, long shimmer).
