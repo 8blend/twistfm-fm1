@@ -18,6 +18,18 @@ jobs:
       - name: Scarica questo progetto
         uses: actions/checkout@v4
 
+      - name: Rimetti i file nelle loro cartelle (se sono stati caricati tutti insieme)
+        run: |
+          if [ ! -f app/fm1.toml ]; then
+            mkdir -p app/src app/site docs/img
+            cp fm1.toml app.c app.h app/
+            cp words.tsv app/ 2>/dev/null || printf 'TWISTFM\ttwist f m\n' > app/words.tsv
+            cp landing.md app/site/
+            cp tfm_*.c tfm_*.h app/src/
+            cp screen-home.png docs/img/
+          fi
+          find app docs -type f | sort
+
       - name: Scarica fm1-base (piattaforma) e felucca-bsp (hardware)
         run: |
           git clone "$FM1_BASE_REPO" fm1-base
@@ -68,7 +80,6 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
-        
 
   # pubblica il sito (installer web) su https://8blend.github.io/twistfm-fm1/
   # serve una volta sola: Settings -> Pages -> Source: GitHub Actions
