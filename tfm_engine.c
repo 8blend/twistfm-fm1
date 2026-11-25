@@ -272,6 +272,11 @@ struct tfm_engine {
     int8_t seq_ping, seq_tr;
     uint8_t seq_out[5];
     float seq_t;
+    /* clock: esterno (tick MIDI) o interno; clock out a 24 tick per 1/4 */
+    uint8_t ext_sync;
+    unsigned clk_out;
+    float ext_beats, ext_bpm, clk_ph;
+    uint32_t ext_samples;
 };
 
 unsigned tfm_engine_size(void) { return (sizeof(tfm_engine) + 7u) & ~7u; }
@@ -490,6 +495,7 @@ void tfm_patch_init(tfm_patch *patch)
     p[TFM_P_BPM] = 60;
     p[TFM_P_ARP_RATE] = 9; p[TFM_P_ARP_GATE] = 80;
     p[TFM_P_SEQ_LEN] = 15; p[TFM_P_SEQ_RATE] = 9; p[TFM_P_SEQ_GATE] = 90;
+    p[TFM_P_GLIDE] = 40; p[TFM_P_BEND] = 2; p[TFM_P_DLY_DIV] = 7;   /* portamento spento ma pronto; eco 1/8 puntato */
 }
 
 static void player_reset(tfm_engine *e);
@@ -539,6 +545,21 @@ void tfm_set_param(tfm_engine *e, unsigned id, uint8_t value)
 }
 uint8_t tfm_get_param(const tfm_engine *e, unsigned id) { return id < TFM_P_COUNT ? e->patch.p[id] : 0; }
 void tfm_pitch_bend(tfm_engine *e, int q16) { e->bend_q16 = q16; }
+void tfm_set_sync(tfm_engine *e, int ext) { e->ext_sync = ext ? 1 : 0; }
+void tfm_midi_clock(tfm_engine *e)
+{
+    if (e->ext_samples > 0 && e->ext_samples < TFM_SAMPLE_RATE) {   /* BPM misurato, levigato */
+        float bpm = 60.f * (float)TFM_SAMPLE_RATE / ((float)e->ext_samples * 24.f);
+        e->ext_bpm = e->ext_bpm > 0.f ? e->ext_bpm + (bpm - e->ext_bpm) * 0.1f : bpm;
+    }
+    e->ext_samples = 0;
+    e->ext_beats += 1.f / 24.f;
+}
+unsigned tfm_clock_out(tfm_engine *e) { unsigned n = e->clk_out; e->clk_out = 0; return n; }
+unsigned tfm_bpm_now(const tfm_engine *e)
+{
+    return e->ext_sync && e->ext_bpm > 0.f ? (unsigned)(e->ext_bpm + 0.5f) : 60u + e->patch.p[TFM_P_BPM];
+}
 const char *tfm_filter_mode_name(unsigned m) { return m < TFM_FLT_MODES ? flt_names[m] : "?"; }
 const char *tfm_wave_name(unsigned w) { return wave_names[w & 7]; }
 
@@ -553,7 +574,11 @@ static unsigned flt_mode_of(const tfm_engine *e)
     return m < TFM_FLT_MODES ? m : f_to((uint8_t)m, TFM_FLT_MODES);
 }
 
-static float bend_semis(const tfm_engine *e) { return (float)e->bend_q16 * (1.f / 65536.f); }
+static float bend_semis(const tfm_engine *e)
+{
+    unsigned r = e->patch.p[TFM_P_BEND];
+    return (float)e->bend_q16 * (1.f / 65536.f) * (float)(r < 1 ? 1 : r > 24 ? 24 : r);
+}
 
 static void start_voice(tfm_engine *e, tfm_voice *v, uint8_t note, uint8_t vel, float detune, float pan, int glide)
 {
@@ -613,7 +638,7 @@ static voice_layout layout_of(const tfm_engine *e)
 /* il glide vale per questa nota? ALL: sempre; LEGATO: solo se un'altra nota e' tenuta */
 static int glide_now(const tfm_engine *e)
 {
-    if (!e->patch.p[TFM_P_GLIDE] || e->last_pitch <= 0.f) return 0;
+    if (!e->patch.p[TFM_P_PORTA] || !e->patch.p[TFM_P_GLIDE] || e->last_pitch <= 0.f) return 0;
     if (!e->patch.p[TFM_P_GLIDE_MODE]) return 1;
     for (unsigned i = 0; i < TFM_VOICES; i++) if (e->v[i].gate) return 1;
     return 0;
@@ -644,7 +669,7 @@ static void glide_slot(tfm_engine *e, const voice_layout *l, unsigned slot, uint
     for (unsigned i = 0; i < l->group; i++) {
         tfm_voice *v = &e->v[slot * l->group + i];
         v->note = (int8_t)note;
-        if (!e->patch.p[TFM_P_GLIDE]) v->pitch_cur = (float)note;   /* senza glide: salto immediato */
+        if (!e->patch.p[TFM_P_PORTA] || !e->patch.p[TFM_P_GLIDE]) v->pitch_cur = (float)note;   /* senza portamento: salto immediato */
     }
     e->last_pitch = (float)note;
 }
@@ -738,6 +763,8 @@ void tfm_all_notes_off(tfm_engine *e)
 
 const char *const tfm_div_names[TFM_DIVS] = { "4BAR", "2BAR", "1BAR", "1/2", "1/3", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32" };
 static const float div_beats[TFM_DIVS] = { 16.f, 8.f, 4.f, 2.f, 4.f / 3.f, 1.f, 2.f / 3.f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f };
+const char *const tfm_dly_div_names[TFM_DLY_DIVS] = { "1/32", "1/16T", "1/16", "1/8T", "1/16D", "1/8", "1/4T", "1/8D", "1/4", "1/4D", "1/2" };
+const float tfm_dly_div_beats[TFM_DLY_DIVS] = { 0.125f, 1.f / 6.f, 0.25f, 1.f / 3.f, 0.375f, 0.5f, 2.f / 3.f, 0.75f, 1.f, 1.5f, 2.f };
 const char *const tfm_arp_names[TFM_ARP_MODES] = { "UP", "DOWN", "UPDN", "RAND", "WALK", "CONV", "DIVG", "PLAY", "STUT", "ALL" };
 const char *const tfm_scale_names[TFM_SCALES] = {
     "CHRO", "MAJR", "MINR", "DORI", "PHRY", "LYDI", "MIXO", "LOCR", "HARm", "MELm", "PNTM",
@@ -973,6 +1000,12 @@ static void player_tick(tfm_engine *e, unsigned n)
 {
     const uint8_t *p = e->patch.p;
     float beats = (float)n * (60.f + (float)p[TFM_P_BPM]) * (1.f / 60.f) / (float)TFM_SAMPLE_RATE;
+    if (e->ext_samples < 0x7fffffffu) e->ext_samples += n;
+    if (e->ext_sync) { beats = e->ext_beats; e->ext_beats = 0.f; }   /* il tempo lo danno i tick MIDI */
+    else {   /* clock out: 24 tick per nota da 1/4 */
+        e->clk_ph += beats * 24.f;
+        while (e->clk_ph >= 1.f) { e->clk_ph -= 1.f; if (e->clk_out < 64) e->clk_out++; }
+    }
     float sw = (float)p[TFM_P_SWING] * (0.33f / 127.f);
     if (p[TFM_P_ARP_ON] && e->arp_n) {
         float base = div_beats[p[TFM_P_ARP_RATE] % TFM_DIVS];
@@ -1129,7 +1162,7 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
     for (unsigned i = 0; i < TFM_LINKS; i++)
         if (p[TFM_MENV_LINK(i)] && link_amt(p, TFM_MENV_LINK(i))) menv_on = 1;
     /* tempi del glide e di rise/fall, per sotto-blocco */
-    float gl_t = p[TFM_P_GLIDE] ? 0.005f * tfm_exp2f((float)p[TFM_P_GLIDE] * (9.f / 127.f)) : 0.f;   /* fino a ~2.6 s */
+    float gl_t = p[TFM_P_PORTA] && p[TFM_P_GLIDE] ? 0.005f * tfm_exp2f((float)p[TFM_P_GLIDE] * (9.f / 127.f)) : 0.f;   /* fino a ~2.6 s */
     float sub = (float)TFM_SUB / (float)TFM_SAMPLE_RATE;
     float gl_c = gl_t > 0.f ? 1.f - tfm_exp2f(-3.f * 1.4427f * sub / gl_t) : 1.f;
     float rise_c = 1.f - tfm_exp2f(-1.4427f * sub / 0.05f);   /* ~150 ms per il 95% */
@@ -1244,6 +1277,10 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
                 out[s * 2 + 1] += (int32_t)(y * pr);
             }
         }
+    }
+    if (e->ext_sync && e->ext_bpm > 60.f) {   /* l'eco a tempo segue il clock esterno */
+        float b = e->ext_bpm - 60.f;
+        eff[TFM_P_BPM] = (uint8_t)(b > 127.f ? 127.f : b);
     }
     p = eff;   /* gli effetti con le modulazioni dell'ultimo sotto-blocco */
     /* effetti, blocco della componente continua (~10 Hz) e limitatore morbido in Q23 */

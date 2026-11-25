@@ -77,6 +77,8 @@ enum {
     TFM_P_SEQ_NOTE, TFM_P_SEQ_LEN, TFM_P_SEQ_DIR, TFM_P_SEQ_RATE, TFM_P_SEQ_GATE,
     /* scala (TFM_SCALES), tonica 0..11 (DO..SI), accordo (TFM_CHORDS) */
     TFM_P_SCALE, TFM_P_ROOT, TFM_P_CHORD,
+    /* portamento acceso (con il tempo TFM_P_GLIDE), pitch bend 1..24 semitoni, eco a tempo (TFM_DLY_DIVS) */
+    TFM_P_PORTA, TFM_P_BEND, TFM_P_DLY_SYNC, TFM_P_DLY_DIV,
     TFM_P_COUNT
 };
 
@@ -86,11 +88,14 @@ enum {
 #define TFM_SCALES 22
 #define TFM_CHORDS 12
 #define TFM_SEQ_STEPS 128
+#define TFM_DLY_DIVS 11    /* 1/32 1/16T 1/16 1/8T 1/16D 1/8 1/4T 1/8D 1/4 1/4D 1/2 */
 enum { TFM_GATE_REST, TFM_GATE_TRIG, TFM_GATE_TIE };
 /* passi del sequencer: nota e tipo (TFM_GATE_*) */
 typedef struct { uint8_t note[TFM_SEQ_STEPS]; uint8_t gate[TFM_SEQ_STEPS]; } tfm_seq;
 extern const char *const tfm_div_names[TFM_DIVS];
 extern const char *const tfm_arp_names[TFM_ARP_MODES];
+extern const char *const tfm_dly_div_names[TFM_DLY_DIVS];
+extern const float tfm_dly_div_beats[TFM_DLY_DIVS];
 extern const char *const tfm_scale_names[TFM_SCALES];
 extern const char *const tfm_chord_names[TFM_CHORDS];
 extern const uint16_t tfm_scale_masks[TFM_SCALES];   /* bit i = semitono i dalla tonica */
@@ -128,7 +133,13 @@ uint8_t tfm_get_param(const tfm_engine *e, unsigned id);
 void tfm_note_on(tfm_engine *e, uint8_t note, uint8_t velocity);
 void tfm_note_off(tfm_engine *e, uint8_t note);
 void tfm_all_notes_off(tfm_engine *e);
-void tfm_pitch_bend(tfm_engine *e, int semitones_q16);
+/* pitch bend: -65536..65536 = tutta la corsa (TFM_P_BEND semitoni) */
+void tfm_pitch_bend(tfm_engine *e, int norm_q16);
+/* clock MIDI: 0 interno, 1 esterno; un tick (24 per nota da 1/4); quanti tick inviare (clock out) */
+void tfm_set_sync(tfm_engine *e, int ext);
+void tfm_midi_clock(tfm_engine *e);
+unsigned tfm_clock_out(tfm_engine *e);
+unsigned tfm_bpm_now(const tfm_engine *e);   /* BPM in uso (con il clock esterno: misurato) */
 /* sequencer: un passo, tutti i passi, avvio/arresto; stato = passo | in corsa << 8 | arp attivo << 9 */
 void tfm_set_step(tfm_engine *e, unsigned step, uint8_t note, uint8_t gate);
 void tfm_load_seq(tfm_engine *e, const tfm_seq *s);

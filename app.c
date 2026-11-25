@@ -38,12 +38,26 @@ static void q_push(uint32_t type, uint32_t a, uint32_t b)
 /* ------------------------------------------------------------------- audio --- */
 static float gain_now;
 
+static uint8_t run_out;                        /* stato del sequencer gia' comunicato al clock out */
+
 static void midi_in(void)                      /* nell'interrupt audio: il MIDI arrivato da USB e TRS */
 {
     uint32_t pkt;
     int port;
+    const tfm_settings *set = tfm_ui_settings(U);
     while (plat_midi_in(&pkt, &port)) {
         uint32_t st = (pkt >> 8) & 0xFFu, d1 = (pkt >> 16) & 0x7Fu, d2 = pkt >> 24 & 0x7Fu;
+        if (set->thru) plat_midi_send(pkt, TO_USB & ~plat_midi_in_from());   /* MIDI thru verso il computer */
+        if (st >= 0xF8u) {                      /* real-time: clock e trasporto (solo con sync esterno) */
+            if (!set->sync) continue;
+            if (st == 0xF8u) tfm_midi_clock(E);
+            else if (st == 0xFAu) { tfm_transport(E, 0); tfm_transport(E, 1); }
+            else if (st == 0xFBu) tfm_transport(E, 1);
+            else if (st == 0xFCu) tfm_transport(E, 0);
+            continue;
+        }
+        if (st < 0xF0u && set->in_ch && (st & 0x0Fu) != (uint32_t)(set->in_ch - 1u))
+            continue;                           /* canale diverso da quello scelto */
         switch (st & 0xF0u) {
         case 0x90u:
             if (d2) tfm_note_on(E, (uint8_t)d1, (uint8_t)d2);
@@ -51,10 +65,24 @@ static void midi_in(void)                      /* nell'interrupt audio: il MIDI 
             break;
         case 0x80u: tfm_note_off(E, (uint8_t)d1); break;
         case 0xB0u: if (d1 == 120u || d1 == 123u) tfm_all_notes_off(E); break;
-        case 0xE0u: tfm_pitch_bend(E, (int)(((int)(d2 << 7 | d1) - 8192) * 2 * 65536 / 8192)); break; /* +-2 semitoni */
+        case 0xE0u: tfm_pitch_bend(E, (int)(((int)(d2 << 7 | d1) - 8192) * 8)); break;   /* tutta la corsa = +-65536 */
         default: break;
         }
     }
+}
+
+static void clock_out(void)                    /* nell'interrupt audio, dopo il render: clock e START/STOP */
+{
+    const tfm_settings *set = tfm_ui_settings(U);
+    uint32_t n = tfm_clock_out(E), run = (tfm_play_state(E) >> 8) & 1u;
+    if (!set->clk_out || set->sync)
+        return;
+    if (run != run_out) {
+        plat_midi_send(0x0Fu | (run ? 0xFAu : 0xFCu) << 8, TO_USB);
+        run_out = (uint8_t)run;
+    }
+    while (n--)
+        plat_midi_send(0x0Fu | 0xF8u << 8, TO_USB);
 }
 
 void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
@@ -83,8 +111,10 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         else if (type == Q_PLAY) tfm_transport(E, (int)a);
         q_tail = (t + 1u) & (QN - 1u);
     }
+    tfm_set_sync(E, tfm_ui_settings(U)->sync);
     midi_in();
     tfm_render(E, lr, n);
+    clock_out();
     /* MASTER: guadagno che scivola, niente scatti a fine blocco (in float: niente prodotti a 64 bit) */
     {
         float target = (float)master_q12 * (1.0f / 4096.0f);
@@ -113,6 +143,10 @@ void app_init(void)
             int n = plat_store_load(OBJ_USER0 + s, buf, sizeof buf);
             if (n > 0) tfm_ui_user_load(U, s, buf, (unsigned)n);
         }
+    }
+    {   /* impostazioni MIDI e clock */
+        tfm_settings s;
+        if (plat_store_load(OBJ_SETTINGS, &s, sizeof s) == (int)sizeof s) tfm_ui_settings_load(U, &s);
     }
     tfm_load_patch(E, tfm_ui_patch(U));        /* il preset di partenza scelto dall'interfaccia */
     tfm_load_seq(E, tfm_ui_seq(U));
@@ -152,7 +186,7 @@ void app_ui_init(void)
     touch_on(1);                                /* velocity dai tasti */
     lcd_fill(0, 0, 240, 240, 0x0000);
     if (!mem_ok) {
-        app_say("MEMORIA", "INSUFFICIENTE");
+        app_say("OUT OF", "MEMORY");
         say_draw();
         return;
     }
@@ -169,6 +203,7 @@ static const uint8_t ENC_MAP[NE] = { TFM_ENC_SELECT, TFM_ENC_ALGORITHM, TFM_ENC_
 static uint32_t prev_keys, prev_btn;
 
 static uint8_t blob[TFM_USER_BLOB_MAX];        /* un preset utente come sta in flash */
+static uint32_t set_due;                       /* quando salvare le impostazioni (0 = niente da salvare) */
 
 static void forward_events(void)               /* dall'interfaccia al motore (e le note anche al computer) */
 {
@@ -176,10 +211,12 @@ static void forward_events(void)               /* dall'interfaccia al motore (e 
     while (tfm_ui_next_event(U, &ev)) {
         if (ev.type == TFM_EV_NOTE_ON) {
             q_push(Q_NOTE_ON, ev.a, ev.b);
-            plat_midi_send(0x09u | 0x90u << 8 | (uint32_t)ev.a << 16 | (uint32_t)ev.b << 24, TO_USB);
+            if (tfm_ui_settings(U)->note_out)
+                plat_midi_send(0x09u | (0x90u | tfm_ui_settings(U)->out_ch) << 8 | (uint32_t)ev.a << 16 | (uint32_t)ev.b << 24, TO_USB);
         } else if (ev.type == TFM_EV_NOTE_OFF) {
             q_push(Q_NOTE_OFF, ev.a, 0);
-            plat_midi_send(0x08u | 0x80u << 8 | (uint32_t)ev.a << 16, TO_USB);
+            if (tfm_ui_settings(U)->note_out)
+                plat_midi_send(0x08u | (0x80u | tfm_ui_settings(U)->out_ch) << 8 | (uint32_t)ev.a << 16, TO_USB);
         } else if (ev.type == TFM_EV_PARAM) {
             q_push(Q_PARAM, ev.a, ev.b);
         } else if (ev.type == TFM_EV_PATCH) {   /* preset nuovo: tutti i parametri */
@@ -197,8 +234,11 @@ static void forward_events(void)               /* dall'interfaccia al motore (e 
         } else if (ev.type == TFM_EV_SAVE) {    /* preset utente in flash (ciclo principale: qui si puo') */
             uint32_t n = tfm_ui_user_blob(U, ev.a, blob, sizeof blob);
             if (!n || plat_store_save(OBJ_USER0 + ev.a, blob, n) != 0) {
-                app_say("SALVATAGGIO", "FALLITO");
+                app_say("SAVE", "FAILED");
             }
+        } else if (ev.type == TFM_EV_SETTINGS) {   /* MIDI/clock cambiati: si salvano fra 2 secondi */
+            set_due = plat_ms() + 2000u;
+            if (!set_due) set_due = 1;
         }
     }
 }
@@ -231,6 +271,11 @@ static void input(void)
     prev_btn = btn;
     forward_events();
     tfm_ui_set_play_state(U, tfm_play_state(E));   /* passo del sequencer per lo schermo */
+    tfm_ui_set_bpm(U, tfm_bpm_now(E));
+    if (set_due && (int32_t)(plat_ms() - set_due) >= 0) {   /* impostazioni MIDI in flash, a bocce ferme */
+        set_due = 0;
+        plat_store_save(OBJ_SETTINGS, tfm_ui_settings(U), sizeof(tfm_settings));
+    }
     {   /* luci: dai bit dell'interfaccia (tasti 0..13, note 14..40) ai bit di plat.h */
         uint64_t l = tfm_ui_leds(U);
         uint32_t lb = 0;

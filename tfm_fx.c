@@ -180,15 +180,20 @@ static void phaser_run(tfm_fx *fx, const uint8_t *p, float *io, unsigned n)
 static void tape_run(tfm_fx *fx, const uint8_t *p, float *io, unsigned n)
 {
     float ms = 30.f * tfm_exp2f(u7(p, TFM_P_DLY_TIME) * 4.544f);   /* 30 .. 700 ms */
+    if (p[TFM_P_DLY_SYNC]) {   /* a tempo: divisione della nota da 1/4 al BPM del preset (o del clock esterno) */
+        float bpm = 60.f + (float)p[TFM_P_BPM];
+        ms = 60000.f / bpm * tfm_dly_div_beats[p[TFM_P_DLY_DIV] % TFM_DLY_DIVS];
+        if (ms > 720.f) ms = 720.f;   /* il nastro e' lungo ~740 ms */
+    }
     float target = ms * (FS / 1000.f);
-    float fb = u7(p, TFM_P_DLY_FB) * 1.03f;                        /* oltre 1: autooscillazione controllata */
+    float fb = u7(p, TFM_P_DLY_FB) * 1.06f;                        /* nell'ultimo tratto: autooscillazione */
     float tone = u7(p, TFM_P_DLY_TONE);
     float fc = 900.f * tfm_exp2f(tone * 4.f);                      /* 0.9 .. 14 kHz */
     float c = 1.f - tfm_exp2f(-6.2832f * fc / FS * 1.4427f);
     float wow = u7(p, TFM_P_DLY_WOW), sat = u7(p, TFM_P_DLY_SAT);
     float spread = u7(p, TFM_P_DLY_SPREAD) * 0.025f * FS;
     float mix = u7(p, TFM_P_DLY_MIX);
-    float drive = 1.f + sat * 4.f, norm = 1.f / (0.6f + 0.4f * drive);
+    float drive = 1.f + sat * 4.f, norm = 1.f / drive;   /* guadagno 1 a basso livello: la saturazione comprime soltanto */
     if (fx->tape_delay <= 0.f) fx->tape_delay = target;
     for (unsigned i = 0; i < n; i++) {
         /* la velocita' del nastro insegue il tempo impostato: cambiando TIME si sente il "pitch" */

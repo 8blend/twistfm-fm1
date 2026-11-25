@@ -49,11 +49,11 @@ static const char *const L_L2[2] = { "SER", "PAR" };
 static const char *const L_KSL[4] = { "0", "-1.5", "-3", "-6" };
 static const char *const L_OFFON[2] = { "OFF", "ON" };
 static const char *const L_MODE[TFM_VOICE_MODES] = { "POL8", "UNIS", "4X2", "2X4", "MONO", "WIDE", "RRBN" };
-static const char *const L_MODE_LONG[TFM_VOICE_MODES] = { "POLIFONIA", "UNISONO", "4 NOTE X 2", "2 NOTE X 4", "MONO L+R", "WIDE PINGPONG", "ROUND ROBIN" };
+static const char *const L_MODE_LONG[TFM_VOICE_MODES] = { "POLYPHONY", "UNISON", "4 NOTES X 2", "2 NOTES X 4", "MONO L+R", "WIDE PINGPONG", "ROUND ROBIN" };
 static const char *const L_VOICES[8] = { "1", "2", "3", "4", "5", "6", "7", "8" };
 static const char *const L_PRIO[3] = { "LAST", "HIGH", "LOW" };
 static const char *const L_DIST[TFM_DIST_SHAPES] = { "TUBE", "FUZZ", "DIOD", "FOLD", "RECT", "CRSH", "HARD", "SINE", "SPLT", "FDBK" };
-static const char *const L_DIST_LONG[TFM_DIST_SHAPES] = { "TUBE", "FUZZ", "DIODO", "WAVEFOLD", "RETTIFICA", "BITCRUSH", "HARD CLIP", "SINE FOLD", "SPLIT", "FEEDBACK" };
+static const char *const L_DIST_LONG[TFM_DIST_SHAPES] = { "TUBE", "FUZZ", "DIODE", "WAVEFOLD", "RECTIFIER", "BITCRUSH", "HARD CLIP", "SINE FOLD", "SPLIT", "FEEDBACK" };
 static const char *const L_REV[TFM_REV_TYPES] = { "ROOM", "PLAT", "SHIM" };
 static const char *const L_REV_LONG[TFM_REV_TYPES] = { "ROOM", "PLATE", "LONG SHIMMER" };
 static const uint8_t fx_mix_id[4] = { TFM_P_DIST_MIX, TFM_P_PH_MIX, TFM_P_DLY_MIX, TFM_P_REV_MIX };
@@ -62,7 +62,12 @@ static const char *const L_LSHAPE[TFM_LFO_SHAPES] = { "TRI", "SAW", "RAMP", "REC
 static const char *const L_LMODE[TFM_LFO_MODES] = { "BIPO", "UNI+", "UNI-", "REC+", "REC-" };
 static const char *const L_VWAVE[5] = { "SINE", "RECT", "SAW", "RAMP", "NOIZ" };
 static const char *const L_VMODE[3] = { "BIPO", "UP", "DOWN" };
-static const char *const L_GLMODE[2] = { "ALL", "LEGT" };
+static const char *const L_GLMODE[2] = { "ALWS", "LEGT" };
+/* comandi che non sono parametri del preset */
+enum { V_STEP = 0x400, V_NOTE, V_GATE, V_CLEAR, V_SLOT, V_CH1, V_CH2, V_CH3, V_CH4,
+       V_INCH, V_OUTCH, V_NOTEOUT, V_THRU, V_SYNC, V_CLKOUT, V_DTIME };
+static const char *const L_BEND[25] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+                                        "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24" };
 static const char *const L_RANGE[6] = { "1", "2", "3", "4", "5", "6" };
 static const char *const L_SEQNOTE[2] = { "ABS", "RELA" };
 static const char *const L_SEQDIR[4] = { "FWD", "REV", "PING", "RAND" };
@@ -81,21 +86,26 @@ static const pdesc P_FILTER[3][4] = {
     { {T_LIST, TFM_P_FLT_TYPE, "TYPE", L_FT, 15}, {T_F, TFM_P_CUTOFF, "CUTOFF", 0, 0}, {T_F, TFM_P_RES, "RES", 0, 0}, {T_F, TFM_P_FLT_ENV, "ENV", 0, 0} },
     { {T_F, TFM_P_HEAT, "HEAT", 0, 0}, {T_LIST, TFM_P_FLAVOUR, "FLAV", L_FLAV, 2}, {T_F, TFM_P_WOBBLE, "WOBBLE", 0, 0}, {T_LIST, TFM_P_KEYTRACK, "KTRACK", L_TEN, 11} },
     { {T_F, TFM_P_FLT_A, "ATK", 0, 0}, {T_F, TFM_P_FLT_D, "DEC", 0, 0}, {T_F, TFM_P_FLT_S, "SUS", 0, 0}, {T_F, TFM_P_FLT_R, "REL", 0, 0} } };
-static const pdesc P_GLO[7][4] = {
+static const pdesc P_GLO[10][4] = {
     { {T_LIST, TFM_P_VOICE_MODE, "MODE", L_MODE, TFM_VOICE_MODES}, {T_VOICES, TFM_P_VOICES, "VOICES", L_VOICES, 8}, {T_LIST, TFM_P_PRIO, "PRIO", L_PRIO, 3}, {T_F, TFM_P_FAT, "FAT", 0, 0} },
     { {T_F, TFM_P_FB1, "FB 1", 0, 0}, {T_LIST, TFM_P_ALGO2, "LAYER2", L_L2, 2}, {T_F, TFM_P_FB2, "FB 5", 0, 0}, {T_TUNE, TFM_P_L2_TUNE, "L2TUNE", 0, 49} },
     { {T_F, TFM_P_VOLUME, "VOLUME", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} },
     { {T_F, TFM_P_VIB_RATE, "RATE", 0, 0}, {T_F, TFM_P_VIB_DEPTH, "DEPTH", 0, 0}, {T_LIST, TFM_P_VIB_WAVE, "WAVE", L_VWAVE, 5}, {T_LIST, TFM_P_VIB_MODE, "MODE", L_VMODE, 3} },
     { {T_F, TFM_P_TREM_RATE, "RATE", 0, 0}, {T_F, TFM_P_TREM_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_TREM_PHASE, "PHASE", 0, 0}, {T_NONE, 0, "", 0, 0} },
-    { {T_F, TFM_P_GLIDE, "GLIDE", 0, 0}, {T_LIST, TFM_P_GLIDE_MODE, "GL MOD", L_GLMODE, 2}, {T_F, TFM_P_RISE, "RISE", 0, 0}, {T_F, TFM_P_FALL, "FALL", 0, 0} },
-    { {T_LIST, TFM_P_SCALE, "SCALA", tfm_scale_names, TFM_SCALES}, {T_LIST, TFM_P_ROOT, "TONICA", L_ROOT, 12},
-      {T_LIST, TFM_P_CHORD, "ACCORDO", tfm_chord_names, TFM_CHORDS}, {T_NONE, 0, "", 0, 0} } };
-#define GLO_PAGES 7
+    { {T_LIST, TFM_P_PORTA, "PORTA", L_OFFON, 2}, {T_F, TFM_P_GLIDE, "TIME", 0, 0}, {T_LIST, TFM_P_GLIDE_MODE, "MODE", L_GLMODE, 2},
+      {T_LIST, TFM_P_BEND, "BEND", L_BEND, 25} },
+    { {T_F, TFM_P_RISE, "RISE", 0, 0}, {T_F, TFM_P_FALL, "FALL", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} },
+    { {T_LIST, TFM_P_SCALE, "SCALE", tfm_scale_names, TFM_SCALES}, {T_LIST, TFM_P_ROOT, "ROOT", L_ROOT, 12},
+      {T_LIST, TFM_P_CHORD, "CHORD", tfm_chord_names, TFM_CHORDS}, {T_NONE, 0, "", 0, 0} },
+    { {T_STEP, V_INCH, "IN CH", 0, 0}, {T_STEP, V_OUTCH, "OUT CH", 0, 0}, {T_STEP, V_NOTEOUT, "NOTE OUT", 0, 0}, {T_STEP, V_THRU, "THRU", 0, 0} },
+    { {T_STEP, V_SYNC, "CLOCK", 0, 0}, {T_STEP, V_CLKOUT, "CLK OUT", 0, 0}, {T_BPM, TFM_P_BPM, "BPM", 0, 0}, {T_NONE, 0, "", 0, 0} } };
+#define GLO_PAGES 10
+enum { GP_PORTA = 5, GP_RISE, GP_SCALE, GP_MIDI, GP_SYNC };
 static const pdesc P_FX[7][4] = {
     { {T_LIST, TFM_P_DIST_TYPE, "TYPE", L_DIST, TFM_DIST_SHAPES}, {T_F, TFM_P_DIST_DRIVE, "DRIVE", 0, 0}, {T_F, TFM_P_DIST_TEMP, "TEMP", 0, 0}, {T_F, TFM_P_DIST_MIX, "MIX", 0, 0} },
     { {T_F, TFM_P_PH_RATE, "RATE", 0, 0}, {T_F, TFM_P_PH_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_PH_FB, "FDBK", 0, 0}, {T_F, TFM_P_PH_MIX, "MIX", 0, 0} },
-    { {T_MS, TFM_P_DLY_TIME, "TIME MS", 0, 0}, {T_F, TFM_P_DLY_FB, "FDBK", 0, 0}, {T_F, TFM_P_DLY_TONE, "TONE", 0, 0}, {T_F, TFM_P_DLY_MIX, "MIX", 0, 0} },
-    { {T_F, TFM_P_DLY_WOW, "WOW", 0, 0}, {T_F, TFM_P_DLY_SAT, "SAT", 0, 0}, {T_F, TFM_P_DLY_SPREAD, "SPREAD", 0, 0}, {T_NONE, 0, "", 0, 0} },
+    { {T_STEP, V_DTIME, "TIME", 0, 0}, {T_F, TFM_P_DLY_FB, "FDBK", 0, 0}, {T_F, TFM_P_DLY_TONE, "TONE", 0, 0}, {T_F, TFM_P_DLY_MIX, "MIX", 0, 0} },
+    { {T_F, TFM_P_DLY_WOW, "WOW", 0, 0}, {T_F, TFM_P_DLY_SAT, "SAT", 0, 0}, {T_F, TFM_P_DLY_SPREAD, "SPREAD", 0, 0}, {T_LIST, TFM_P_DLY_SYNC, "SYNC", L_OFFON, 2} },
     { {T_LIST, TFM_P_REV_TYPE, "TYPE", L_REV, TFM_REV_TYPES}, {T_F, TFM_P_REV_DECAY, "DECAY", 0, 0}, {T_F, TFM_P_REV_TONE, "TONE", 0, 0}, {T_F, TFM_P_REV_MIX, "MIX", 0, 0} },
     { {T_F, TFM_P_REV_PREDLY, "PREDLY", 0, 0}, {T_F, TFM_P_REV_MOD, "MOD", 0, 0}, {T_F, TFM_P_REV_SHIM, "SHIMMR", 0, 0}, {T_NONE, 0, "", 0, 0} },
     { {T_LIST, TFM_P_FX_SLOT1, "SLOT 1", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT2, "SLOT 2", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT3, "SLOT 3", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT4, "SLOT 4", L_SLOT, 5} } };
@@ -113,15 +123,14 @@ static const pdesc P_LFO[12][4] = {
 /* fase 5: arpeggiatore, sequencer, salvataggio */
 static const pdesc P_ARP[2][4] = {
     { {T_LIST, TFM_P_ARP_ON, "ARP", L_OFFON, 2}, {T_LIST, TFM_P_ARP_MODE, "MODE", tfm_arp_names, TFM_ARP_MODES},
-      {T_LIST, TFM_P_ARP_RANGE, "OTTAVE", L_RANGE, 6}, {T_LIST, TFM_P_ARP_RATE, "RATE", tfm_div_names, TFM_DIVS} },
+      {T_LIST, TFM_P_ARP_RANGE, "OCTAVE", L_RANGE, 6}, {T_LIST, TFM_P_ARP_RATE, "RATE", tfm_div_names, TFM_DIVS} },
     { {T_F, TFM_P_ARP_GATE, "GATE", 0, 0}, {T_LIST, TFM_P_ARP_LATCH, "LATCH", L_OFFON, 2}, {T_F, TFM_P_SWING, "SWING", 0, 0}, {T_BPM, TFM_P_BPM, "BPM", 0, 0} } };
-enum { V_STEP = 0x400, V_NOTE, V_GATE, V_CLEAR, V_SLOT, V_CH1, V_CH2, V_CH3, V_CH4 };   /* comandi che non sono parametri */
 static const pdesc P_SEQ[3][4] = {
-    { {T_LIST, TFM_P_SEQ_NOTE, "NOTE", L_SEQNOTE, 2}, {T_LEN, TFM_P_SEQ_LEN, "PASSI", 0, 0},
-      {T_LIST, TFM_P_SEQ_DIR, "DIREZ", L_SEQDIR, 4}, {T_LIST, TFM_P_SEQ_RATE, "RATE", tfm_div_names, TFM_DIVS} },
+    { {T_LIST, TFM_P_SEQ_NOTE, "NOTE", L_SEQNOTE, 2}, {T_LEN, TFM_P_SEQ_LEN, "STEPS", 0, 0},
+      {T_LIST, TFM_P_SEQ_DIR, "DIR", L_SEQDIR, 4}, {T_LIST, TFM_P_SEQ_RATE, "RATE", tfm_div_names, TFM_DIVS} },
     { {T_BPM, TFM_P_BPM, "BPM", 0, 0}, {T_F, TFM_P_SEQ_GATE, "GATE", 0, 0}, {T_F, TFM_P_SWING, "SWING", 0, 0}, {T_NONE, 0, "", 0, 0} },
-    { {T_STEP, V_STEP, "PASSO", 0, 0}, {T_STEP, V_NOTE, "NOTA", 0, 0}, {T_STEP, V_GATE, "GATE", 0, 0}, {T_STEP, V_CLEAR, "CANCELLA", 0, 0} } };
-static const pdesc P_SAVE[4] = { {T_STEP, V_CH1, "CAR 1", 0, 0}, {T_STEP, V_CH2, "CAR 2", 0, 0}, {T_STEP, V_CH3, "CAR 3", 0, 0}, {T_STEP, V_CH4, "CAR 4", 0, 0} };
+    { {T_STEP, V_STEP, "STEP", 0, 0}, {T_STEP, V_NOTE, "NOTE", 0, 0}, {T_STEP, V_GATE, "GATE", 0, 0}, {T_STEP, V_CLEAR, "CLEAR", 0, 0} } };
+static const pdesc P_SAVE[4] = { {T_STEP, V_CH1, "CHR 1", 0, 0}, {T_STEP, V_CH2, "CHR 2", 0, 0}, {T_STEP, V_CH3, "CHR 3", 0, 0}, {T_STEP, V_CH4, "CHR 4", 0, 0} };
 static const uint8_t page_count[S_COUNT] = { 1, 2, 1, 3, GLO_PAGES, 1, 7, 12, 2, 3, 1 };
 
 static const uint8_t black_keys[11] = { 1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25 };
@@ -136,6 +145,9 @@ struct tfm_ui {
     uint8_t playing, rec, cursor, play_step, arp_busy, clear_acc, saved_msg;
     uint8_t save_slot;
     char save_name[5];
+    tfm_settings set;          /* MIDI e clock: globali, non nel preset */
+    uint8_t play_hold;
+    uint16_t bpm_now;          /* BPM in uso (con il clock esterno: misurato) */
     tfm_event q[64];
     uint8_t qh, qt;
     uint8_t section, page[S_COUNT], op, preset, info;
@@ -160,10 +172,26 @@ void tfm_ui_set_blit(tfm_ui *u, tfm_blit_fn fn) { u->blit = fn; u->dirty = 1; tf
 unsigned tfm_ui_preset_count(void) { return TFM_PRESET_COUNT; }
 const char *tfm_ui_preset_name(unsigned i) { return i < TFM_PRESET_COUNT ? tfm_presets[i].name : ""; }
 const tfm_seq *tfm_ui_seq(const tfm_ui *u) { return &u->seq; }
+const tfm_settings *tfm_ui_settings(const tfm_ui *u) { return &u->set; }
+void tfm_ui_set_bpm(tfm_ui *u, unsigned bpm)
+{
+    if (bpm != u->bpm_now) { u->bpm_now = (uint16_t)bpm; if (u->section == S_GLO && u->page[S_GLO] == GP_SYNC) u->dirty = 1; }
+}
+void tfm_ui_settings_load(tfm_ui *u, const tfm_settings *s)
+{
+    if (s->magic != TFM_SETTINGS_MAGIC) return;
+    u->set = *s;
+    if (u->set.in_ch > 16) u->set.in_ch = 0;
+    if (u->set.out_ch > 15) u->set.out_ch = 0;
+    u->set.note_out &= 1; u->set.thru &= 1; u->set.sync &= 1; u->set.clk_out &= 1;
+    u->dirty = 1;
+}
 int tfm_ui_playing(const tfm_ui *u) { return u->playing; }
 void tfm_ui_set_play_state(tfm_ui *u, unsigned st)
 {
-    uint8_t step = (uint8_t)(st & 0xff), busy = (uint8_t)((st >> 9) & 1);
+    uint8_t step = (uint8_t)(st & 0xff), busy = (uint8_t)((st >> 9) & 1), run = (uint8_t)((st >> 8) & 1);
+    if (u->play_hold) u->play_hold--;
+    else if (run != u->playing) { u->playing = run; u->dirty = 1; }   /* START/STOP dal clock MIDI esterno */
     if ((st >> 8 & 1) && step != u->play_step) { u->play_step = step; if (u->section == S_SEQ || u->section == S_HOME) u->dirty = 1; }
     if (busy != u->arp_busy) { u->arp_busy = busy; if (u->section == S_ARP) u->dirty = 1; }
 }
@@ -230,6 +258,10 @@ static void load_preset(tfm_ui *u, unsigned i)
     if (i < TFM_PRESET_COUNT) {
         for (unsigned k = 0; k < TFM_P_COUNT; k++) u->patch.p[k] = tfm_presets[i].p[k];
         tfm_seq_default(&u->seq);
+        if (tfm_presets[i].seq && tfm_presets[i].seq <= TFM_PATTERN_COUNT) {   /* la sequenza del preset */
+            const tfm_pattern *pt = &tfm_patterns[tfm_presets[i].seq - 1];
+            for (unsigned k = 0; k < 16; k++) { u->seq.note[k] = pt->note[k]; u->seq.gate[k] = pt->gate[k]; }
+        }
     } else {
         const user_preset *s = &u->user[i - TFM_PRESET_COUNT];
         tfm_memcpy(u->patch.p, s->p, TFM_P_COUNT);
@@ -252,6 +284,8 @@ tfm_ui *tfm_ui_init(void *memory)
     u->touched = -1;
     u->qh = u->qt = 0;
     for (unsigned i = 0; i < TFM_USER_SLOTS; i++) tfm_strcpy(u->user[i].name, "----");
+    u->set.magic = TFM_SETTINGS_MAGIC;
+    u->set.note_out = 1;
     load_preset(u, TFM_PRESET_COUNT > 1 ? 1 : 0);
     u->section = S_HOME;
     u->dirty = 1;
@@ -321,6 +355,7 @@ static void stop_seq(tfm_ui *u)
 {
     if (!u->playing) return;
     u->playing = 0;
+    u->play_hold = 8;
     push(u, TFM_EV_PLAY, 0, 0);
     u->dirty = 1;
 }
@@ -364,6 +399,18 @@ static void turn_virtual(tfm_ui *u, unsigned id, int delta)
             u->cursor = 0;
             push(u, TFM_EV_SEQ, 0, 0);
         }
+        break;
+    case V_INCH: { int c = (int)u->set.in_ch + (delta > 0 ? 1 : -1); u->set.in_ch = (uint8_t)(c < 0 ? 0 : c > 16 ? 16 : c); push(u, TFM_EV_SETTINGS, 0, 0); } break;
+    case V_OUTCH: { int c = (int)u->set.out_ch + (delta > 0 ? 1 : -1); u->set.out_ch = (uint8_t)(c < 0 ? 0 : c > 15 ? 15 : c); push(u, TFM_EV_SETTINGS, 0, 0); } break;
+    case V_NOTEOUT: u->set.note_out = delta > 0; push(u, TFM_EV_SETTINGS, 0, 0); break;
+    case V_THRU: u->set.thru = delta > 0; push(u, TFM_EV_SETTINGS, 0, 0); break;
+    case V_SYNC: u->set.sync = delta > 0; push(u, TFM_EV_SETTINGS, 0, 0); break;
+    case V_CLKOUT: u->set.clk_out = delta > 0; push(u, TFM_EV_SETTINGS, 0, 0); break;
+    case V_DTIME:   /* eco: millisecondi, oppure divisione se SYNC e' acceso */
+        if (u->patch.p[TFM_P_DLY_SYNC]) {
+            int d = (int)(u->patch.p[TFM_P_DLY_DIV] % TFM_DLY_DIVS) + (delta > 0 ? 1 : -1);
+            set_param(u, TFM_P_DLY_DIV, d < 0 ? 0 : d >= TFM_DLY_DIVS ? TFM_DLY_DIVS - 1 : d);
+        } else set_param(u, TFM_P_DLY_TIME, u->patch.p[TFM_P_DLY_TIME] + delta);
         break;
     case V_CH1: case V_CH2: case V_CH3: case V_CH4: {
         static const char set[] = SAVE_CHARS;
@@ -425,6 +472,16 @@ static void value_text(const tfm_ui *u, const pdesc *d, char *out)
         case V_GATE: tfm_strcpy(out, L_GATE[u->seq.gate[c] % 3]); break;
         case V_CLEAR: { static const char *const bar[9] = { ">>>", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8" };
                         tfm_strcpy(out, bar[u->clear_acc > 8 ? 8 : u->clear_acc]); } break;
+        case V_INCH: if (u->set.in_ch) num_text(out, u->set.in_ch); else tfm_strcpy(out, "OMNI"); break;
+        case V_OUTCH: num_text(out, u->set.out_ch + 1u); break;
+        case V_NOTEOUT: tfm_strcpy(out, u->set.note_out ? "ON" : "OFF"); break;
+        case V_THRU: tfm_strcpy(out, u->set.thru ? "ON" : "OFF"); break;
+        case V_SYNC: tfm_strcpy(out, u->set.sync ? "EXT" : "INT"); break;
+        case V_CLKOUT: tfm_strcpy(out, u->set.clk_out ? "ON" : "OFF"); break;
+        case V_DTIME:
+            if (u->patch.p[TFM_P_DLY_SYNC]) tfm_strcpy(out, tfm_dly_div_names[u->patch.p[TFM_P_DLY_DIV] % TFM_DLY_DIVS]);
+            else { float ms = 30.f; for (unsigned k = 0; k < u->patch.p[TFM_P_DLY_TIME]; k++) ms *= 1.02511f; num_text(out, (unsigned)(ms + 0.5f)); }
+            break;
         default: { char s[2] = { u->save_name[id - V_CH1], 0 }; tfm_strcpy(out, s[0] == ' ' ? "_" : s); } break;
         }
         return;
@@ -531,6 +588,7 @@ void tfm_ui_button(tfm_ui *u, unsigned b, int down)
         else {
             set_param(u, TFM_P_ARP_ON, 0);
             u->playing = 1;
+            u->play_hold = 8;
             u->play_step = 0;
             push(u, TFM_EV_PLAY, 1, 0);
         }
@@ -590,7 +648,7 @@ void tfm_ui_key_vel(tfm_ui *u, unsigned key, int down, unsigned vel)
             for (unsigned i = 0; i < 10; i++)
                 if (black_keys[i] == key) {
                     if (i < 6) u->op = (uint8_t)i;
-                    else if (i < 8) { u->section = S_GLO; u->page[S_GLO] = i == 6 ? 5 : 0; }   /* PITCH, GLOBAL */
+                    else if (i < 8) { u->section = S_GLO; u->page[S_GLO] = i == 6 ? GP_PORTA : 0; }   /* PITCH, GLOBAL */
                     else set_param(u, TFM_P_VOICE_MODE, i == 8 ? 4 : 0);     /* MONO, POLY = POL8 */
                     u->touched = -1;
                     u->dirty = 1;
@@ -814,7 +872,7 @@ static void draw_home(tfm_ui *u)
         unsigned s = u->preset - TFM_PRESET_COUNT + 1u;
         num[0] = 'U'; num[1] = (char)('0' + s / 10); num[2] = (char)('0' + s % 10); num[3] = 0;
     }
-    header(u, "HOME", u->saved_msg ? "SALVATO!" : num);
+    header(u, "HOME", u->saved_msg ? "SAVED!" : num);
     text(u, 6, 40, preset_name(u), 3, TEXT);
     {   /* arp e sequencer, se attivi */
         int sx = 234;
@@ -833,10 +891,10 @@ static void draw_home(tfm_ui *u)
     draw_algo(u, 84);
     const uint8_t *p = u->patch.p;
     unsigned ft = p[TFM_P_FLT_TYPE] > 14 ? 14 : p[TFM_P_FLT_TYPE];
-    text(u, 6, 152, "FILTRO", 1, DIM);
+    text(u, 6, 152, "FILTER", 1, DIM);
     int x = text(u, 48, 150, L_FT[ft], 1, knob_color[1]);
     text(u, x + 8, 150, L_FLAV[p[TFM_P_FLAVOUR] ? 1 : 0], 1, p[TFM_P_FLAVOUR] ? AMBER : ACCENT);
-    text(u, 6, 164, "VOCI", 1, DIM);
+    text(u, 6, 164, "VOICES", 1, DIM);
     {
         char vm[24];
         unsigned m = mode_cur(u);
@@ -844,7 +902,7 @@ static void draw_home(tfm_ui *u)
         if (mode_is_poly(u)) { unsigned n = (unsigned)tfm_strlen(vm); vm[n] = ' '; vm[n + 1] = (char)('0' + voices_cur(u)); vm[n + 2] = 'V'; vm[n + 3] = 0; }
         x = text(u, 48, 164, vm, 1, TEXT);
     }
-    text(u, x + 12, 164, "OTT", 1, DIM);
+    text(u, x + 12, 164, "OCT", 1, DIM);
     {
         uint8_t sl[4];
         fx_slots(u, sl);
@@ -885,7 +943,7 @@ static void draw_edit(tfm_ui *u)
     t[2] = (char)('1' + u->op);
     unsigned a = algo_cur(u);
     unsigned car = carriers[a] | (u->patch.p[TFM_P_ALGO2] ? 0x30u : 0x20u);
-    header(u, "EDIT", (car >> u->op) & 1 ? "PORTANTE" : "MODULATORE");
+    header(u, "EDIT", (car >> u->op) & 1 ? "CARRIER" : "MODULATOR");
     draw_op_strip(u, 34);
     text(u, 6, 78, t, 4, AMBER);
     unsigned w = u->patch.p[TFM_OP_BASE(u->op) + TFM_OPP_WAVE] >> 4;
@@ -901,9 +959,9 @@ static void draw_edit(tfm_ui *u)
         if (i) line(u, bx + 1 + i, py, bx + 2 + i, yy, knob_color[1]);
         py = yy;
     }
-    text(u, 6, 140, "PAG", 1, DIM);
-    text(u, 30, 140, u->page[S_EDIT] ? "2 SCALA" : "1 BASE", 1, TEXT);
-    text(u, 6, 164, "TASTI NERI = OPERATORE", 1, DIM);
+    text(u, 6, 140, "PAGE", 1, DIM);
+    text(u, 30, 140, u->page[S_EDIT] ? "2 SCALE" : "1 BASIC", 1, TEXT);
+    text(u, 6, 164, "BLACK KEYS = OPERATOR", 1, DIM);
     page_dots(u, 2, u->page[S_EDIT]);
     footer(u, P_EDIT[u->page[S_EDIT]]);
 }
@@ -931,7 +989,7 @@ static void draw_env(tfm_ui *u)
     draw_op_strip(u, 34);
     const uint8_t *q = u->patch.p + TFM_OP_BASE(u->op);
     draw_adsr(u, 6, 80, 228, 92, q[TFM_OPP_A], q[TFM_OPP_D], q[TFM_OPP_S], q[TFM_OPP_R], knob_color[3]);
-    text(u, 10, 178, "SELECT/TASTI NERI = OPERATORE", 1, DIM);
+    text(u, 10, 178, "SELECT/BLACK KEYS = OP", 1, DIM);
     footer(u, P_ENV);
 }
 
@@ -989,9 +1047,9 @@ static void draw_response(tfm_ui *u, int bx, int by, int bw, int bh)
 
 static void draw_filter(tfm_ui *u)
 {
-    static const char *const sub[3] = { "1 FILTRO", "2 CARATTERE", "3 INVILUPPO" };
+    static const char *const sub[3] = { "1 FILTER", "2 CHARACTER", "3 ENVELOPE" };
     const uint8_t *p = u->patch.p;
-    header(u, "FILTRO", p[TFM_P_FLAVOUR] ? "MS20" : "LIQUID");
+    header(u, "FILTER", p[TFM_P_FLAVOUR] ? "MS20" : "LIQUID");
     if (u->page[S_FILTER] == 2)
         draw_adsr(u, 6, 36, 228, 128, p[TFM_P_FLT_A], p[TFM_P_FLT_D], p[TFM_P_FLT_S], p[TFM_P_FLT_R], knob_color[3]);
     else
@@ -1079,7 +1137,7 @@ static void draw_links(tfm_ui *u, int y, unsigned base, int hl)
 }
 static void draw_lfo(tfm_ui *u)
 {
-    static const char *const sub[3] = { "PRINCIPALE", "CHAIN 1-2", "CHAIN 3-4" };
+    static const char *const sub[3] = { "MAIN", "CHAIN 1-2", "CHAIN 3-4" };
     const uint8_t *p = u->patch.p;
     unsigned pg = u->page[S_LFO], k = pg / 3, sp = pg % 3;
     char title[8] = "LFO 1";
@@ -1094,12 +1152,12 @@ static void draw_lfo(tfm_ui *u)
             fmt_fixed(hz, lfo_rate_hz(q[0]), 2);
             int x = text(u, 6, 140, hz, 2, TEXT);
             text(u, x + 4, 147, "HZ", 1, DIM);
-            text(u, 120, 140, q[3] ? "RETRIG" : "LIBERO", 2, q[3] ? AMBER : DIM);
+            text(u, 120, 140, q[3] ? "RETRIG" : "FREE", 2, q[3] ? AMBER : DIM);
             /* collegamenti attivi in breve */
             unsigned n = 0;
             for (unsigned i = 0; i < TFM_LINKS; i++)
                 if (p[TFM_LFO_LINK(k, i)] && p[TFM_LFO_LINK(k, i) + 1] != TFM_AMT_ZERO) n++;
-            char s[16] = "CHAIN: 0 ATTIVE";
+            char s[16] = "CHAIN: 0 ACTIVE";
             s[7] = (char)('0' + n);
             text(u, 6, 168, s, 1, n ? GREEN : DIM);
         } else {
@@ -1153,54 +1211,113 @@ static void draw_glo_mod(tfm_ui *u, unsigned pg)
         text(u, x + 4, 147, "HZ", 1, DIM);
         fmt_fixed(s, (float)p[TFM_P_TREM_PHASE] * (180.f / 127.f), 0);
         x = text(u, 120, 140, s, 2, TEXT);
-        text(u, x + 4, 147, "GRADI L/R", 1, DIM);
-    } else {   /* pitch: glide, rise, fall */
+        text(u, x + 4, 147, "DEG L/R", 1, DIM);
+    } else if (pg == GP_PORTA) {   /* portamento: da una nota all'altra */
         int bx = 6, by = 36, bw = 228, bh = 92;
         frame(u, bx, by, bw, bh, PANEL);
-        int lo = by + bh - 14, hi = by + 24;
-        float gl = (float)p[TFM_P_GLIDE] / 127.f, rise = (float)p[TFM_P_RISE] / 127.f, fall = (float)p[TFM_P_FALL] / 127.f;
-        int x1 = bx + 70, xr = bx + 160;
-        line(u, bx + 4, lo, x1, lo, DIM);   /* nota precedente */
-        /* glide verso la nuova nota (piu' lungo con GLIDE), con il rise che parte piu' in basso */
-        int gw = 2 + (int)(gl * 60.f), py = lo;
-        for (int i = 0; i <= xr - x1; i++) {
-            float tg = gw > 2 ? (float)i / (float)gw : 9.f;
-            float e = tg > 3.f ? 0.f : 1.f;
-            for (int m = 0; m < 3 && tg <= 3.f; m++) e *= 1.f - tg / 3.f;
-            float r = (float)i / 18.f;
-            float re = r > 3.f ? 0.f : (1.f - r / 3.f) * (1.f - r / 3.f);
-            int yy = hi + (int)((float)(lo - hi) * e) + (int)(rise * 40.f * re);
-            if (yy > by + bh - 3) yy = by + bh - 3;
-            if (i) line(u, x1 + i - 1, py, x1 + i, yy, knob_color[0]);
+        int on = p[TFM_P_PORTA] != 0;
+        int lo = by + bh - 18, hi = by + 22, x1 = bx + 60;
+        line(u, bx + 6, lo, x1, lo, DIM);
+        text(u, bx + 8, lo + 6, "NOTE 1", 1, DIM);
+        int gw = on ? 4 + (int)((float)p[TFM_P_GLIDE] / 127.f * 140.f) : 1;
+        int py = lo;
+        for (int i = 0; i <= bx + bw - 6 - x1; i++) {
+            float t = (float)i / (float)gw;
+            float e = t >= 1.f ? 1.f : 1.f - (1.f - t) * (1.f - t);
+            int yy = lo - (int)((float)(lo - hi) * e);
+            if (i) line(u, x1 + i - 1, py, x1 + i, yy, on ? knob_color[1] : DIM);
             py = yy;
         }
-        /* fall dopo il rilascio */
-        for (int i = 0; i < bx + bw - 4 - xr; i++) {
+        text(u, bx + bw - 48, hi - 12, "NOTE 2", 1, DIM);
+        int x = text(u, 6, 136, on ? "PORTAMENTO ON" : "PORTAMENTO OFF", 2, on ? AMBER : DIM);
+        text(u, 6, 155, p[TFM_P_GLIDE_MODE] ? "LEGATO: ONLY WHEN NOTES OVERLAP" : "ALWAYS: EVERY NOTE GLIDES", 1, on ? TEXT : DIM);
+        num_text(s, p[TFM_P_BEND] < 1 ? 1u : p[TFM_P_BEND]);
+        x = text(u, 6, 168, "PITCH BEND +/-", 1, DIM);
+        x = text(u, x + 6, 168, s, 1, TEXT);
+        text(u, x + 6, 168, "SEMITONES", 1, DIM);
+    } else {   /* rise e fall: il pitch sale all'attacco, cade al rilascio */
+        int bx = 6, by = 36, bw = 228, bh = 92;
+        frame(u, bx, by, bw, bh, PANEL);
+        int mid = by + bh / 2, xr = bx + 150;
+        float rise = (float)p[TFM_P_RISE] / 127.f, fall = (float)p[TFM_P_FALL] / 127.f;
+        fill(u, bx + 2, mid, bw - 4, 1, PANEL);
+        int py = mid + (int)(rise * 36.f);
+        for (int i = 1; i < xr - bx - 4; i++) {
+            float r = (float)i / 22.f;
+            int yy = mid + (int)(rise * 36.f * (r > 3.f ? 0.f : (1.f - r / 3.f) * (1.f - r / 3.f)));
+            line(u, bx + 3 + i, py, bx + 4 + i, yy, knob_color[0]);
+            py = yy;
+        }
+        for (int i = 1; i < bx + bw - 4 - xr; i++) {
             float f = (float)i / (8.f + fall * 30.f);
-            int yy = hi + (int)(fall * 50.f * (1.f - 1.f / (1.f + f)));
+            int yy = mid + (int)(fall * 40.f * (1.f - 1.f / (1.f + f)));
             if (yy > by + bh - 3) yy = by + bh - 3;
-            if (i) line(u, xr + i - 1, py, xr + i, yy, knob_color[3]);
+            line(u, xr + i - 1, py, xr + i, yy, knob_color[1]);
             py = yy;
         }
         fill(u, xr, by + 2, 1, bh - 4, PANEL);
+        text(u, bx + 6, by + 6, "NOTE ON", 1, DIM);
         text(u, xr + 4, by + 6, "NOTE OFF", 1, DIM);
-        text(u, 6, 140, p[TFM_P_GLIDE_MODE] ? "GLIDE LEGATO" : "GLIDE SEMPRE", 2, p[TFM_P_GLIDE] ? AMBER : DIM);
+        text(u, 6, 140, "RISE: SCOOP UP AT START", 1, p[TFM_P_RISE] ? TEXT : DIM);
+        text(u, 6, 154, "FALL: DROP AFTER RELEASE", 1, p[TFM_P_FALL] ? TEXT : DIM);
     }
     page_dots(u, GLO_PAGES, pg);
     footer(u, P_GLO[pg]);
 }
 
 static void draw_scale(tfm_ui *u);
+static void draw_midi(tfm_ui *u, unsigned pg)
+{
+    const tfm_settings *s = &u->set;
+    if (pg == GP_MIDI) {
+        text(u, 6, 38, "INPUT", 2, AMBER);
+        text(u, 6, 58, "USB + TRS JACK (3.5MM)", 1, TEXT);
+        char c[24] = "CHANNEL: ";
+        if (s->in_ch) num_text(c + 9, s->in_ch); else tfm_strcpy(c + 9, "OMNI (ALL)");
+        text(u, 6, 70, c, 1, TEXT);
+        text(u, 6, 82, s->thru ? "THRU: IN -> USB OUT" : "THRU: OFF", 1, s->thru ? GREEN : DIM);
+        text(u, 6, 102, "OUTPUT", 2, AMBER);
+        text(u, 6, 122, "USB ONLY (NO MIDI OUT JACK)", 1, TEXT);
+        tfm_strcpy(c, "CHANNEL: ");
+        num_text(c + 9, s->out_ch + 1u);
+        text(u, 6, 134, c, 1, TEXT);
+        text(u, 6, 146, s->note_out ? "NOTES: KEYS -> USB" : "NOTES: OFF", 1, s->note_out ? GREEN : DIM);
+        text(u, 6, 166, "PITCH BEND: SEE PAGE 6", 1, DIM);
+    } else {
+        text(u, 6, 38, s->sync ? "EXTERNAL CLOCK" : "INTERNAL CLOCK", 2, AMBER);
+        if (s->sync) {
+            text(u, 6, 60, "ARP, SEQ AND SYNCED ECHO", 1, TEXT);
+            text(u, 6, 72, "FOLLOW MIDI CLOCK (USB/TRS)", 1, TEXT);
+            text(u, 6, 84, "START/STOP CONTROL THE SEQ", 1, TEXT);
+        } else {
+            text(u, 6, 60, "TEMPO FROM THE BPM KNOB", 1, TEXT);
+            text(u, 6, 72, "(SAVED WITH THE PRESET)", 1, DIM);
+        }
+        char b[16];
+        num_text(b, u->bpm_now ? u->bpm_now : 60u + u->patch.p[TFM_P_BPM]);
+        int x = text(u, 6, 108, b, 4, TEXT);
+        text(u, x + 6, 122, "BPM", 2, DIM);
+        if (s->clk_out && s->sync) text(u, 6, 150, "CLOCK OUT: ONLY WITH INT CLOCK", 1, DIM);
+        else {
+            text(u, 6, 150, s->clk_out ? "CLOCK OUT: 24 PPQN -> USB" : "CLOCK OUT: OFF", 1, s->clk_out ? GREEN : DIM);
+            if (s->clk_out) text(u, 6, 162, "WITH START/STOP ON PLAY", 1, DIM);
+        }
+    }
+    page_dots(u, GLO_PAGES, pg);
+    footer(u, P_GLO[pg]);
+}
 static void draw_glo(tfm_ui *u)
 {
-    static const char *const sub[GLO_PAGES] = { "1 VOCI", "2 LAYER", "3 LIVELLO", "4 VIBRATO", "5 TREMOLO", "6 PITCH", "7 SCALA" };
+    static const char *const sub[GLO_PAGES] = { "1 VOICES", "2 LAYER", "3 LEVEL", "4 VIBRATO", "5 TREMOLO", "6 PORTAMENTO",
+                                                "7 RISE/FALL", "8 SCALE", "9 MIDI", "10 SYNC" };
     header(u, "GLOBAL", sub[u->page[S_GLO]]);
-    if (u->page[S_GLO] == 6) { draw_scale(u); page_dots(u, GLO_PAGES, 6); footer(u, P_GLO[6]); return; }
+    if (u->page[S_GLO] == GP_SCALE) { draw_scale(u); page_dots(u, GLO_PAGES, GP_SCALE); footer(u, P_GLO[GP_SCALE]); return; }
+    if (u->page[S_GLO] == GP_MIDI || u->page[S_GLO] == GP_SYNC) { draw_midi(u, u->page[S_GLO]); return; }
     if (u->page[S_GLO] >= 3) { draw_glo_mod(u, u->page[S_GLO]); return; }
     const uint8_t *p = u->patch.p;
     unsigned m = mode_cur(u);
     /* le 8 voci: quadratini accesi in base al modo e al limite di polifonia */
-    text(u, 6, 36, "VOCI", 1, DIM);
+    text(u, 6, 36, "VOICES", 1, DIM);
     unsigned group = m == 1 ? 8 : m == 2 ? 2 : m == 3 ? 4 : m == 4 ? 2 : 1;
     unsigned used = mode_is_poly(u) ? voices_cur(u) : 8;
     if (m == 4) used = 2;
@@ -1212,12 +1329,12 @@ static void draw_glo(tfm_ui *u)
         text(u, x + 10, 54, s1, 1, i < used ? BACK : DIM);
     }
     text(u, 6, 74, L_MODE_LONG[m], 2, TEXT);
-    if (mode_is_mono(u)) { text(u, 6, 94, "PRIORITA", 1, DIM); text(u, 60, 94, L_PRIO[p[TFM_P_PRIO] > 2 ? 0 : p[TFM_P_PRIO]], 1, AMBER); }
-    else { text(u, 6, 94, "NOTE INSIEME", 1, DIM); char n[2] = { (char)('0' + (m == 2 ? 4 : m == 3 ? 2 : used)), 0 }; text(u, 84, 94, n, 1, AMBER); }
+    if (mode_is_mono(u)) { text(u, 6, 94, "PRIORITY", 1, DIM); text(u, 60, 94, L_PRIO[p[TFM_P_PRIO] > 2 ? 0 : p[TFM_P_PRIO]], 1, AMBER); }
+    else { text(u, 6, 94, "NOTES STACKED", 1, DIM); char n[2] = { (char)('0' + (m == 2 ? 4 : m == 3 ? 2 : used)), 0 }; text(u, 84, 94, n, 1, AMBER); }
     char tv[8];
     value_text(u, &P_GLO[1][3], tv);
     text(u, 6, 120, "LAYER 2", 1, DIM);
-    int x = text(u, 6, 134, p[TFM_P_ALGO2] ? "PARALLELO" : "SERIE", 2, TEXT);
+    int x = text(u, 6, 134, p[TFM_P_ALGO2] ? "PARALLEL" : "SERIES", 2, TEXT);
     x = text(u, x + 12, 134, tv, 2, knob_color[3]);
     text(u, x + 4, 141, "ST", 1, DIM);
     page_dots(u, GLO_PAGES, u->page[S_GLO]);
@@ -1226,7 +1343,7 @@ static void draw_glo(tfm_ui *u)
 
 
 /* ---- effetti ---- */
-static const char *const fx_page_name[7] = { "1 DIST", "2 PHASER", "3 TAPE ECHO", "4 NASTRO", "5 REVERB", "6 REVERB+", "7 CATENA" };
+static const char *const fx_page_name[7] = { "1 DIST", "2 PHASER", "3 TAPE ECHO", "4 TAPE+", "5 REVERB", "6 REVERB+", "7 CHAIN" };
 /* slot della catena */
 static void fx_slots(const tfm_ui *u, uint8_t out[4])
 {
@@ -1269,12 +1386,12 @@ static void draw_fx(tfm_ui *u)
             char k[3] = { 'K', (char)('1' + i), 0 };
             text(u, 16, y + 4, k, 1, knob_color[i]);
             frame(u, 36, y, 120, 18, c);
-            static const char *const longn[5] = { "VUOTO", "DISTORSIONE", "PHASER", "TAPE ECHO", "REVERB" };
+            static const char *const longn[5] = { "EMPTY", "DISTORTION", "PHASER", "TAPE ECHO", "REVERB" };
             text(u, 42, y + 6, longn[f], 1, c);
-            text(u, 164, y + 6, f ? (on ? "ACCESO" : "MIX 0") : "", 1, on ? GREEN : DIM);
+            text(u, 164, y + 6, f ? (on ? "ON" : "MIX 0") : "", 1, on ? GREEN : DIM);
         }
-        text(u, 6, 160, "USCITA", 1, DIM);
-        text(u, 60, 172, "STESSO EFFETTO = SCAMBIO", 1, DIM);
+        text(u, 6, 160, "OUTPUT", 1, DIM);
+        text(u, 60, 172, "SAME EFFECT = SWAP", 1, DIM);
         page_dots(u, 7, pg);
         footer(u, P_FX[pg]);
         return;
@@ -1316,7 +1433,7 @@ static void draw_fx(tfm_ui *u)
             if (i) line(u, bx + i, py, bx + 1 + i, yy, knob_color[1]);
             py = yy;
         }
-        text(u, bx + 6, by + 6, "6 STADI STEREO", 1, TEXT);
+        text(u, bx + 6, by + 6, "6 STAGES STEREO", 1, TEXT);
     } else if (cur == 2) { /* ripetizioni dell'eco */
         float ms = 30.f; for (unsigned k = 0; k < p[TFM_P_DLY_TIME]; k++) ms *= 1.02511f;
         float fb = (float)p[TFM_P_DLY_FB] / 127.f * 1.03f, a = 1.f;
@@ -1331,7 +1448,7 @@ static void draw_fx(tfm_ui *u)
             if (h < 1) break;
             fill(u, x, base - h, 4, h, knob_color[2]);
         }
-        text(u, bx + 6, by + 6, "1.5 SECONDI", 1, DIM);
+        text(u, bx + 6, by + 6, "1.5 SECONDS", 1, DIM);
     } else { /* coda del riverbero */
         unsigned t = p[TFM_P_REV_TYPE] < TFM_REV_TYPES ? p[TFM_P_REV_TYPE] : 0;
         float dec = (float)p[TFM_P_REV_DECAY] / 127.f;
@@ -1350,7 +1467,7 @@ static void draw_fx(tfm_ui *u)
         }
         text(u, bx + 6, by + 6, L_REV_LONG[t], 2, TEXT);
     }
-    text(u, 6, 164, "SELECT = PAGINA", 1, DIM);
+    text(u, 6, 164, "SELECT = PAGE", 1, DIM);
     page_dots(u, 7, pg);
     footer(u, P_FX[pg]);
 }
@@ -1403,10 +1520,10 @@ static void tempo_text(tfm_ui *u, int x, int y, unsigned div_param)
 static void draw_arp(tfm_ui *u)
 {
     const uint8_t *p = u->patch.p;
-    header(u, "ARP", u->page[S_ARP] ? "2 GATE E TEMPO" : "1 MODO");
+    header(u, "ARP", u->page[S_ARP] ? "2 GATE & TEMPO" : "1 MODE");
     int on = p[TFM_P_ARP_ON] != 0;
-    text(u, 6, 36, on ? "ACCESO" : "SPENTO", 2, on ? GREEN : DIM);
-    if (on && u->arp_busy) text(u, 90, 40, "SUONA", 1, AMBER);
+    text(u, 6, 36, on ? "ON" : "OFF", 2, on ? GREEN : DIM);
+    if (on && u->arp_busy) text(u, 90, 40, "PLAYING", 1, AMBER);
     if (on && p[TFM_P_ARP_LATCH]) text(u, 140, 40, "LATCH", 1, ACCENT);
     /* anteprima del percorso: 16 passi */
     uint8_t seq[16], lo, hi;
@@ -1423,7 +1540,7 @@ static void draw_arp(tfm_ui *u)
         fill(u, bx + 4 + (int)k * cw, yy, w, 5, on ? knob_color[k % 4] : DIM);
     }
     tempo_text(u, 6, 150, TFM_P_ARP_RATE);
-    text(u, 6, 172, u->section == S_ARP ? "ARP = ACCENDI/SPEGNI" : "", 1, DIM);
+    text(u, 6, 172, u->section == S_ARP ? "ARP BUTTON = ON/OFF" : "", 1, DIM);
     page_dots(u, 2, u->page[S_ARP]);
     footer(u, P_ARP[u->page[S_ARP]]);
 }
@@ -1455,7 +1572,7 @@ static void draw_steps(tfm_ui *u, int bx, int by, int bw, int bh, unsigned first
 }
 static void draw_seq(tfm_ui *u)
 {
-    static const char *const sub[3] = { "1 SEQUENZA", "2 TEMPO", "3 PASSI" };
+    static const char *const sub[3] = { "1 SEQUENCE", "2 TEMPO", "3 STEPS" };
     unsigned pg = u->page[S_SEQ], len = seq_len_ui(u);
     header(u, "SEQ", sub[pg]);
     char s[16];
@@ -1470,16 +1587,16 @@ static void draw_seq(tfm_ui *u)
         unsigned first = (u->cursor / 16) * 16;
         draw_steps(u, 6, 56, 228, 84, first, 16, 1);
         char nn[8];
-        if (u->seq.gate[u->cursor] == TFM_GATE_REST) tfm_strcpy(nn, "PAUSA");
+        if (u->seq.gate[u->cursor] == TFM_GATE_REST) tfm_strcpy(nn, "REST");
         else note_text(nn, u->seq.note[u->cursor]);
         int x = text(u, 6, 148, nn, 3, AMBER);
         text(u, x + 10, 155, L_GATE[u->seq.gate[u->cursor] % 3], 1, ACCENT);
-        text(u, 6, 176, u->rec ? "SUONA: SCRIVE E AVANZA" : "TASTI = NOTA DEL PASSO", 1, DIM);
+        text(u, 6, 176, u->rec ? "PLAY KEYS: WRITE + NEXT" : "KEYS = STEP NOTE", 1, DIM);
     } else {
         draw_steps(u, 6, 56, 228, 84, 0, len < 16 ? 16 : len, 0);
         if (pg == 0) {
-            text(u, 6, 150, u->patch.p[TFM_P_SEQ_NOTE] ? "RELA: I TASTI TRASPONGONO" : "ABS: NOTE COME SCRITTE", 1, TEXT);
-            text(u, 6, 166, "PLAY = AVVIA  REC = SCRIVI", 1, DIM);
+            text(u, 6, 150, u->patch.p[TFM_P_SEQ_NOTE] ? "RELA: KEYS TRANSPOSE" : "ABS: NOTES AS WRITTEN", 1, TEXT);
+            text(u, 6, 166, "PLAY = START  REC = WRITE", 1, DIM);
         } else {
             tempo_text(u, 6, 150, TFM_P_SEQ_RATE);
         }
@@ -1491,7 +1608,7 @@ static void draw_save(tfm_ui *u)
 {
     char s[8] = "U01";
     s[1] = (char)('0' + (u->save_slot + 1) / 10); s[2] = (char)('0' + (u->save_slot + 1) % 10);
-    header(u, "SALVA", "SELECT = SLOT");
+    header(u, "SAVE", "SELECT = SLOT");
     int x = text(u, 6, 40, "SLOT", 1, DIM);
     text(u, x + 8, 36, s, 2, ACCENT);
     for (int k = 0; k < 4; k++) {   /* il nome, un carattere per knob */
@@ -1501,10 +1618,10 @@ static void draw_save(tfm_ui *u)
         text(u, cx, 70, c[0] == ' ' ? "_" : c, 6, TEXT);
     }
     const user_preset *up = &u->user[u->save_slot];
-    if (up->used) { x = text(u, 6, 136, "SOVRASCRIVE", 1, AMBER); text(u, x + 8, 136, up->name, 1, TEXT); }
-    else text(u, 6, 136, "SLOT LIBERO", 1, GREEN);
-    text(u, 6, 156, "SAVE = CONFERMA", 2, TEXT);
-    text(u, 6, 178, "ALTRO TASTO = ANNULLA", 1, DIM);
+    if (up->used) { x = text(u, 6, 136, "OVERWRITE", 1, AMBER); text(u, x + 8, 136, up->name, 1, TEXT); }
+    else text(u, 6, 136, "EMPTY SLOT", 1, GREEN);
+    text(u, 6, 156, "SAVE = CONFIRM", 2, TEXT);
+    text(u, 6, 178, "OTHER BUTTON = CANCEL", 1, DIM);
     footer(u, P_SAVE);
 }
 /* GLOBAL pagina 7: la scala sulla tastiera e l'accordo sulla tonica */
@@ -1543,21 +1660,21 @@ static void draw_scale(tfm_ui *u)
     tfm_strcpy(s + l, tfm_scale_names[sc]);
     int x = text(u, 6, 142, s, 2, TEXT);
     if (ch) { x = text(u, x + 12, 142, tfm_chord_names[ch], 2, 0xf800); }
-    text(u, 6, 166, sc ? "I TASTI SEGUONO LA SCALA" : "CROMATICA: NESSUNA CORREZIONE", 1, DIM);
+    text(u, 6, 166, sc ? "KEYS FOLLOW THE SCALE" : "CHROMATIC: NO CORRECTION", 1, DIM);
 }
 
 static void draw_info(tfm_ui *u)
 {
     static const char *const names[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "SAVE", "ARP", "SEQ", "PLAY", "REC" };
-    static const char *const what[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "SALVA PRESET",
-                                                     "ARPEGGIATORE", "SEQUENCER 128", "SEQUENCER", "REGISTRA STEP" };
-    static const char *const phase[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "FASE 5", "FASE 5", "FASE 5", "FASE 5", "FASE 5" };
+    static const char *const what[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "SAVE PRESET",
+                                                     "ARPEGGIATOR", "SEQUENCER 128", "SEQUENCER", "STEP RECORD" };
+    static const char *const phase[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "PHASE 5", "PHASE 5", "PHASE 5", "PHASE 5", "PHASE 5" };
     unsigned b = u->info < TFM_BTN_COUNT ? u->info : 0;
     header(u, names[b], 0);
     text(u, 6, 60, what[b], 2, TEXT);
-    text(u, 6, 92, "IN ARRIVO:", 2, DIM);
+    text(u, 6, 92, "COMING:", 2, DIM);
     text(u, 6, 116, phase[b], 3, AMBER);
-    text(u, 6, 164, "HOME PER TORNARE", 1, DIM);
+    text(u, 6, 164, "HOME TO GO BACK", 1, DIM);
 }
 
 static void scene(tfm_ui *u)

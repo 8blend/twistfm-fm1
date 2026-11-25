@@ -21,7 +21,19 @@ enum { TFM_BTN_OCT_DOWN, TFM_BTN_OCT_UP, TFM_BTN_FX, TFM_BTN_SEL, TFM_BTN_ENV, T
 /* PATCH: preset nuovo (parametri e passi: tfm_ui_patch, tfm_ui_seq); STEP: passo a cambiato; SEQ: tutti i passi;
  * PLAY: sequencer avviato (a=1) o fermato; SAVE: salvare lo slot utente a (tfm_ui_user_blob) */
 enum { TFM_EV_NONE, TFM_EV_NOTE_ON, TFM_EV_NOTE_OFF, TFM_EV_PARAM, TFM_EV_PATCH, TFM_EV_STEP, TFM_EV_SEQ,
-       TFM_EV_PLAY, TFM_EV_SAVE };
+       TFM_EV_PLAY, TFM_EV_SAVE, TFM_EV_SETTINGS };
+/* impostazioni globali (MIDI, clock), salvate a parte dai preset */
+#define TFM_SETTINGS_MAGIC 0x5Au
+typedef struct {
+    uint8_t magic;
+    uint8_t in_ch;      /* 0 = OMNI, 1..16 */
+    uint8_t out_ch;     /* 0..15 = canale 1..16 */
+    uint8_t note_out;   /* note dei tasti verso USB */
+    uint8_t thru;       /* MIDI in -> USB out */
+    uint8_t sync;       /* 0 clock interno, 1 esterno (MIDI clock, START/STOP) */
+    uint8_t clk_out;    /* clock e START/STOP verso USB */
+    uint8_t pad;
+} tfm_settings;
 typedef struct { uint8_t type, a, b; } tfm_event;
 
 typedef struct tfm_ui tfm_ui;
@@ -49,6 +61,9 @@ unsigned tfm_ui_preset_count(void);
 /* sequencer e preset utente (fase 5) */
 #define TFM_USER_SLOTS 16
 const tfm_seq *tfm_ui_seq(const tfm_ui *u);
+const tfm_settings *tfm_ui_settings(const tfm_ui *u);
+void tfm_ui_settings_load(tfm_ui *u, const tfm_settings *s);
+void tfm_ui_set_bpm(tfm_ui *u, unsigned bpm);   /* tfm_bpm_now() del motore */
 int tfm_ui_playing(const tfm_ui *u);
 void tfm_ui_set_play_state(tfm_ui *u, unsigned state);   /* tfm_play_state() del motore */
 unsigned tfm_ui_user_blob(const tfm_ui *u, unsigned slot, uint8_t *buf, unsigned max);   /* byte da salvare, 0 = vuoto */
