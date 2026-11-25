@@ -36,7 +36,6 @@ static void q_push(uint32_t type, uint32_t a, uint32_t b)
 }
 
 /* ------------------------------------------------------------------- audio --- */
-static float gain_now;
 
 static uint8_t run_out;                        /* stato del sequencer gia' comunicato al clock out */
 
@@ -113,18 +112,11 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         q_tail = (t + 1u) & (QN - 1u);
     }
     tfm_set_sync(E, tfm_ui_settings(U)->sync);
+    /* MASTER: fino a +12 dB, prima del limitatore morbido del motore (cosi' non gratta) */
+    tfm_set_out_gain(E, (float)master_q12 * (4.0f / 4096.0f));
     midi_in();
     tfm_render(E, lr, n);
     clock_out();
-    /* MASTER: guadagno che scivola, niente scatti a fine blocco (in float: niente prodotti a 64 bit) */
-    {
-        float target = (float)master_q12 * (1.0f / 4096.0f);
-        for (i = 0; i < n; i++) {
-            gain_now += (target - gain_now) * 0.004f;
-            lr[2 * i] = (int32_t)((float)lr[2 * i] * gain_now);
-            lr[2 * i + 1] = (int32_t)((float)lr[2 * i + 1] * gain_now);
-        }
-    }
 }
 
 void app_panic(void) { panic_req = 1; }

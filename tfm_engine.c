@@ -284,6 +284,7 @@ struct tfm_engine {
     uint32_t ext_samples;
     int (*par_begin)(void), (*par_end)(void);   /* secondo core (tfm_set_parallel) */
     uint32_t ver;              /* cresce a ogni parametro cambiato */
+    float og, og_target;       /* guadagno d'uscita (MASTER), prima del limitatore */
 };
 
 unsigned tfm_engine_size(void) { return (sizeof(tfm_engine) + 7u) & ~7u; }
@@ -525,6 +526,7 @@ tfm_engine *tfm_engine_init(void *memory)
     e->rnd = 2463534242u;   /* seme del generatore casuale */
     player_reset(e);
     tfm_seq_default(&e->seq);
+    e->og = e->og_target = 1.f;
     tfm_fx_init(&e->fx);
     tfm_patch_init(&e->patch);
     return e;
@@ -574,6 +576,7 @@ void tfm_shed_voice(tfm_engine *e)
         if (o->stage != EG_OFF) { o->stage = EG_RELEASE; o->rr = 60; }
     }
 }
+void tfm_set_out_gain(tfm_engine *e, float g) { e->og_target = g < 0.f ? 0.f : g > 8.f ? 8.f : g; }
 void tfm_set_sync(tfm_engine *e, int ext) { e->ext_sync = ext ? 1 : 0; }
 void tfm_midi_clock(tfm_engine *e)
 {
@@ -1393,7 +1396,8 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
             float y = x - e->dc_x[ch] + 0.99857f * e->dc_y[ch];
             e->dc_x[ch] = x;
             e->dc_y[ch] = y;
-            o[i] = (int32_t)(tfm_tanhf(y * 2.5f) * 8388607.f);   /* +8 dB in uscita, il tanh fa da limitatore morbido */
+            e->og += (e->og_target - e->og) * 0.002f;   /* MASTER senza scatti */
+            o[i] = (int32_t)(tfm_tanhf(y * 2.5f * e->og) * 8388607.f);   /* +8 dB e MASTER prima del limitatore morbido (tanh) */
         }
     }
 }

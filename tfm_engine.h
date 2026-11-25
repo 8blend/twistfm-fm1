@@ -140,6 +140,8 @@ void tfm_all_notes_off(tfm_engine *e);
 void tfm_pitch_bend(tfm_engine *e, int norm_q16);
 /* clock MIDI: 0 interno, 1 esterno; un tick (24 per nota da 1/4); quanti tick inviare (clock out) */
 void tfm_set_sync(tfm_engine *e, int ext);
+/* MASTER: guadagno d'uscita (1 = normale, fino a 8), applicato prima del limitatore morbido */
+void tfm_set_out_gain(tfm_engine *e, float g);
 void tfm_shed_voice(tfm_engine *e);   /* CPU al limite: spegne in fretta la voce rilasciata piu' vecchia */
 void tfm_midi_clock(tfm_engine *e);
 unsigned tfm_clock_out(tfm_engine *e);
