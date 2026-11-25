@@ -34,10 +34,10 @@ static const uint8_t punct[][6] = {
 /* Sezioni, pagine e parametri                                         */
 /* ------------------------------------------------------------------ */
 
-enum { S_HOME, S_EDIT, S_ENV, S_FILTER, S_GLO, S_INFO, S_FX, S_COUNT };
-enum { T_F, T_WAVE, T_MULT, T_LIST, T_TUNE, T_NONE, T_VOICES, T_MS };
+enum { S_HOME, S_EDIT, S_ENV, S_FILTER, S_GLO, S_INFO, S_FX, S_LFO, S_COUNT };
+enum { T_F, T_WAVE, T_MULT, T_LIST, T_TUNE, T_NONE, T_VOICES, T_MS, T_AMT };
 
-typedef struct { uint8_t type; uint8_t id; const char *label; const char *const *list; uint8_t count; } pdesc;
+typedef struct { uint8_t type; uint16_t id; const char *label; const char *const *list; uint8_t count; } pdesc;
 
 static const char *const L_WAVE[8] = { "SINE", "HALF", "ABS", "PULS", "EVEN", "EABS", "SQUA", "DSQR" };
 static const char *const L_MULT[16] = { ".5", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "10", "12", "12", "15", "15" };
@@ -58,22 +58,32 @@ static const char *const L_REV[TFM_REV_TYPES] = { "ROOM", "PLAT", "SHIM" };
 static const char *const L_REV_LONG[TFM_REV_TYPES] = { "ROOM", "PLATE", "LONG SHIMMER" };
 static const uint8_t fx_mix_id[4] = { TFM_P_DIST_MIX, TFM_P_PH_MIX, TFM_P_DLY_MIX, TFM_P_REV_MIX };
 static const char *const L_SLOT[5] = { "--", "DIST", "PHAS", "TAPE", "REV" };
+static const char *const L_LSHAPE[TFM_LFO_SHAPES] = { "TRI", "SAW", "RAMP", "RECT", "NOIZ", "SINE" };
+static const char *const L_LMODE[TFM_LFO_MODES] = { "BIPO", "UNI+", "UNI-", "REC+", "REC-" };
+static const char *const L_VWAVE[5] = { "SINE", "RECT", "SAW", "RAMP", "NOIZ" };
+static const char *const L_VMODE[3] = { "BIPO", "UP", "DOWN" };
+static const char *const L_GLMODE[2] = { "ALL", "LEGT" };
 static const char *const L_TEN[11] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
 
-#define OPID(f) (0x80u | (f)) /* parametro dell'operatore selezionato */
+#define OPID(f) (0x100u | (f)) /* parametro dell'operatore selezionato */
+#define FB_ID 0x200u            /* feedback dell'operatore selezionato */
 static const pdesc P_HOME[4] = { {T_F, TFM_P_CUTOFF, "CUTOFF", 0, 0}, {T_F, TFM_P_RES, "RES", 0, 0}, {T_F, TFM_P_FLT_ENV, "ENV", 0, 0}, {T_F, TFM_P_HEAT, "HEAT", 0, 0} };
 static const pdesc P_EDIT[2][4] = {
     { {T_F, OPID(TFM_OPP_VOL), "VOL", 0, 0}, {T_WAVE, OPID(TFM_OPP_WAVE), "WAVE", L_WAVE, 8}, {T_MULT, OPID(TFM_OPP_MULT), "MULT", L_MULT, 16}, {T_LIST, OPID(TFM_OPP_KVS), "VELO", L_TEN, 11} },
-    { {T_LIST, OPID(TFM_OPP_KSL), "KSL", L_KSL, 4}, {T_LIST, OPID(TFM_OPP_KSR), "KSR", L_OFFON, 2}, {T_F, 0xff, "FB", 0, 0}, {T_NONE, 0, "", 0, 0} } };
+    { {T_LIST, OPID(TFM_OPP_KSL), "KSL", L_KSL, 4}, {T_LIST, OPID(TFM_OPP_KSR), "KSR", L_OFFON, 2}, {T_F, FB_ID, "FB", 0, 0}, {T_NONE, 0, "", 0, 0} } };
 static const pdesc P_ENV[4] = { {T_F, OPID(TFM_OPP_A), "ATK", 0, 0}, {T_F, OPID(TFM_OPP_D), "DEC", 0, 0}, {T_F, OPID(TFM_OPP_S), "SUS", 0, 0}, {T_F, OPID(TFM_OPP_R), "REL", 0, 0} };
 static const pdesc P_FILTER[3][4] = {
     { {T_LIST, TFM_P_FLT_TYPE, "TYPE", L_FT, 15}, {T_F, TFM_P_CUTOFF, "CUTOFF", 0, 0}, {T_F, TFM_P_RES, "RES", 0, 0}, {T_F, TFM_P_FLT_ENV, "ENV", 0, 0} },
     { {T_F, TFM_P_HEAT, "HEAT", 0, 0}, {T_LIST, TFM_P_FLAVOUR, "FLAV", L_FLAV, 2}, {T_F, TFM_P_WOBBLE, "WOBBLE", 0, 0}, {T_LIST, TFM_P_KEYTRACK, "KTRACK", L_TEN, 11} },
     { {T_F, TFM_P_FLT_A, "ATK", 0, 0}, {T_F, TFM_P_FLT_D, "DEC", 0, 0}, {T_F, TFM_P_FLT_S, "SUS", 0, 0}, {T_F, TFM_P_FLT_R, "REL", 0, 0} } };
-static const pdesc P_GLO[3][4] = {
+static const pdesc P_GLO[6][4] = {
     { {T_LIST, TFM_P_VOICE_MODE, "MODE", L_MODE, TFM_VOICE_MODES}, {T_VOICES, TFM_P_VOICES, "VOICES", L_VOICES, 8}, {T_LIST, TFM_P_PRIO, "PRIO", L_PRIO, 3}, {T_F, TFM_P_FAT, "FAT", 0, 0} },
     { {T_F, TFM_P_FB1, "FB 1", 0, 0}, {T_LIST, TFM_P_ALGO2, "LAYER2", L_L2, 2}, {T_F, TFM_P_FB2, "FB 5", 0, 0}, {T_TUNE, TFM_P_L2_TUNE, "L2TUNE", 0, 49} },
-    { {T_F, TFM_P_VOLUME, "VOLUME", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} } };
+    { {T_F, TFM_P_VOLUME, "VOLUME", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} },
+    { {T_F, TFM_P_VIB_RATE, "RATE", 0, 0}, {T_F, TFM_P_VIB_DEPTH, "DEPTH", 0, 0}, {T_LIST, TFM_P_VIB_WAVE, "WAVE", L_VWAVE, 5}, {T_LIST, TFM_P_VIB_MODE, "MODE", L_VMODE, 3} },
+    { {T_F, TFM_P_TREM_RATE, "RATE", 0, 0}, {T_F, TFM_P_TREM_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_TREM_PHASE, "PHASE", 0, 0}, {T_NONE, 0, "", 0, 0} },
+    { {T_F, TFM_P_GLIDE, "GLIDE", 0, 0}, {T_LIST, TFM_P_GLIDE_MODE, "GL MOD", L_GLMODE, 2}, {T_F, TFM_P_RISE, "RISE", 0, 0}, {T_F, TFM_P_FALL, "FALL", 0, 0} } };
+#define GLO_PAGES 6
 static const pdesc P_FX[7][4] = {
     { {T_LIST, TFM_P_DIST_TYPE, "TYPE", L_DIST, TFM_DIST_SHAPES}, {T_F, TFM_P_DIST_DRIVE, "DRIVE", 0, 0}, {T_F, TFM_P_DIST_TEMP, "TEMP", 0, 0}, {T_F, TFM_P_DIST_MIX, "MIX", 0, 0} },
     { {T_F, TFM_P_PH_RATE, "RATE", 0, 0}, {T_F, TFM_P_PH_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_PH_FB, "FDBK", 0, 0}, {T_F, TFM_P_PH_MIX, "MIX", 0, 0} },
@@ -82,7 +92,18 @@ static const pdesc P_FX[7][4] = {
     { {T_LIST, TFM_P_REV_TYPE, "TYPE", L_REV, TFM_REV_TYPES}, {T_F, TFM_P_REV_DECAY, "DECAY", 0, 0}, {T_F, TFM_P_REV_TONE, "TONE", 0, 0}, {T_F, TFM_P_REV_MIX, "MIX", 0, 0} },
     { {T_F, TFM_P_REV_PREDLY, "PREDLY", 0, 0}, {T_F, TFM_P_REV_MOD, "MOD", 0, 0}, {T_F, TFM_P_REV_SHIM, "SHIMMR", 0, 0}, {T_NONE, 0, "", 0, 0} },
     { {T_LIST, TFM_P_FX_SLOT1, "SLOT 1", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT2, "SLOT 2", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT3, "SLOT 3", L_SLOT, 5}, {T_LIST, TFM_P_FX_SLOT4, "SLOT 4", L_SLOT, 5} } };
-static const uint8_t page_count[S_COUNT] = { 1, 2, 1, 3, 3, 1, 7 };
+/* LFO: per ognuno dei 3 LFO una pagina principale e due di chain (4 collegamenti), poi l'inviluppo di modulazione */
+#define LMAIN(k) { {T_F, TFM_LFO_BASE(k), "RATE", 0, 0}, {T_LIST, TFM_LFO_BASE(k) + 1, "SHAPE", L_LSHAPE, TFM_LFO_SHAPES}, \
+                   {T_LIST, TFM_LFO_BASE(k) + 2, "MODE", L_LMODE, TFM_LFO_MODES}, {T_LIST, TFM_LFO_BASE(k) + 3, "RETRIG", L_OFFON, 2} }
+#define LCH(base, pg, la, lb) { {T_LIST, (base) + 4 * (pg), "DEST " la, tfm_mod_target_names, TFM_MOD_TARGETS}, {T_AMT, (base) + 4 * (pg) + 1, "AMT " la, 0, 41}, \
+                              {T_LIST, (base) + 4 * (pg) + 2, "DEST " lb, tfm_mod_target_names, TFM_MOD_TARGETS}, {T_AMT, (base) + 4 * (pg) + 3, "AMT " lb, 0, 41} }
+static const pdesc P_LFO[12][4] = {
+    LMAIN(0), LCH(TFM_P_LFO1_LINKS, 0, "1", "2"), LCH(TFM_P_LFO1_LINKS, 1, "3", "4"),
+    LMAIN(1), LCH(TFM_P_LFO2_LINKS, 0, "1", "2"), LCH(TFM_P_LFO2_LINKS, 1, "3", "4"),
+    LMAIN(2), LCH(TFM_P_LFO3_LINKS, 0, "1", "2"), LCH(TFM_P_LFO3_LINKS, 1, "3", "4"),
+    { {T_F, TFM_P_MENV_A, "ATK", 0, 0}, {T_F, TFM_P_MENV_D, "DEC", 0, 0}, {T_F, TFM_P_MENV_S, "SUS", 0, 0}, {T_F, TFM_P_MENV_R, "REL", 0, 0} },
+    LCH(TFM_P_MENV_LINKS, 0, "1", "2"), LCH(TFM_P_MENV_LINKS, 1, "3", "4") };
+static const uint8_t page_count[S_COUNT] = { 1, 2, 1, 3, GLO_PAGES, 1, 7, 12 };
 
 static const uint8_t black_keys[11] = { 1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25 };
 
@@ -164,9 +185,9 @@ static int mode_is_mono(const tfm_ui *u) { unsigned m = mode_cur(u); return m ==
 static int resolve_id(const tfm_ui *u, const pdesc *d)
 {
     if (d->type == T_NONE) return -1;
-    if (d->id == 0xff) /* feedback: solo OP1 e OP5 */
+    if (d->id == FB_ID) /* feedback: solo OP1 e OP5 */
         return u->op == 0 ? TFM_P_FB1 : u->op == 4 ? TFM_P_FB2 : -1;
-    if (d->id & 0x80) return (int)TFM_OP_BASE(u->op) + (d->id & 0x7f);
+    if (d->id & 0x100) return (int)TFM_OP_BASE(u->op) + (d->id & 0xff);
     if (d->id == TFM_P_VOICES && !mode_is_poly(u)) return -1;  /* conta solo nei modi polifonici */
     if (d->id == TFM_P_PRIO && !mode_is_mono(u)) return -1;    /* conta solo quando si suona mono */
     if (d->id == TFM_P_REV_SHIM && u->patch.p[TFM_P_REV_TYPE] != 2) return -1; /* solo LONG SHIMMER */
@@ -201,6 +222,7 @@ static const pdesc *page_params(const tfm_ui *u)
     case S_FILTER: return P_FILTER[u->page[S_FILTER]];
     case S_GLO: return P_GLO[u->page[S_GLO]];
     case S_FX: return P_FX[u->page[S_FX]];
+    case S_LFO: return P_LFO[u->page[S_LFO]];
     default: return 0;
     }
 }
@@ -221,6 +243,7 @@ static void turn_param(tfm_ui *u, const pdesc *d, int delta)
     if (d->type == T_F || d->type == T_MS) { set_param(u, id, u->patch.p[id] + delta); return; }
     int i = (int)list_index(d, u->patch.p[id]) + (delta > 0 ? 1 : -1);
     int n = d->type == T_TUNE ? 49 : d->count;
+    if (d->type == T_AMT) { i = (int)list_index(d, u->patch.p[id]) + delta; }
     if (i < 0) i = 0;
     if (i >= n) i = n - 1;
     if (id >= TFM_P_FX_SLOT1 && id <= TFM_P_FX_SLOT4 && i > 0) {
@@ -247,8 +270,8 @@ static void value_text(const tfm_ui *u, const pdesc *d, char *out)
         out[k] = 0;
         return;
     }
-    if (d->type == T_TUNE) {
-        int s = (int)list_index(d, v) - 24;
+    if (d->type == T_TUNE || d->type == T_AMT) {
+        int s = d->type == T_AMT ? (int)list_index(d, v) - TFM_AMT_ZERO : (int)list_index(d, v) - 24;
         char *p = out;
         if (s > 0) *p++ = '+';
         if (s < 0) { *p++ = '-'; s = -s; }
@@ -319,7 +342,11 @@ void tfm_ui_button(tfm_ui *u, unsigned b, int down)
     case TFM_BTN_FX: goto_section(u, S_FX, 0); break;
     case TFM_BTN_SEL: goto_section(u, S_FILTER, 0); break;
     case TFM_BTN_GLO: goto_section(u, S_GLO, 0); break;
-    default: goto_section(u, S_INFO, b); break; /* LFO, SEL, ARP, SEQ, SAVE, PLAY, REC: fasi successive */
+    case TFM_BTN_LFO: /* LFO 1 > LFO 2 > LFO 3 > MOD ENV; le pagine di chain con SELECT */
+        if (u->section == S_LFO) u->page[S_LFO] = (uint8_t)((u->page[S_LFO] / 3 + 1) % 4 * 3);
+        u->section = S_LFO; u->touched = -1; u->dirty = 1;
+        break;
+    default: goto_section(u, S_INFO, b); break; /* SAVE, ARP, SEQ, PLAY, REC: fase 5 */
     }
 }
 
@@ -335,7 +362,7 @@ void tfm_ui_key_vel(tfm_ui *u, unsigned key, int down, unsigned vel)
             for (unsigned i = 0; i < 10; i++)
                 if (black_keys[i] == key) {
                     if (i < 6) u->op = (uint8_t)i;
-                    else if (i < 8) goto_section(u, S_GLO, 0);              /* PITCH, GLOBAL */
+                    else if (i < 8) { u->section = S_GLO; u->page[S_GLO] = i == 6 ? 5 : 0; }   /* PITCH, GLOBAL */
                     else set_param(u, TFM_P_VOICE_MODE, i == 8 ? 4 : 0);     /* MONO, POLY = POL8 */
                     u->touched = -1;
                     u->dirty = 1;
@@ -355,7 +382,7 @@ void tfm_ui_key_vel(tfm_ui *u, unsigned key, int down, unsigned vel)
 uint64_t tfm_ui_leds(const tfm_ui *u)
 {
     uint64_t l = 0;
-    static const uint8_t sec_btn[S_COUNT] = { TFM_BTN_HOME, TFM_BTN_EDIT, TFM_BTN_ENV, TFM_BTN_SEL, TFM_BTN_GLO, 0, TFM_BTN_FX };
+    static const uint8_t sec_btn[S_COUNT] = { TFM_BTN_HOME, TFM_BTN_EDIT, TFM_BTN_ENV, TFM_BTN_SEL, TFM_BTN_GLO, 0, TFM_BTN_FX, TFM_BTN_LFO };
     if (u->section == S_INFO) l |= 1ull << u->info;
     else l |= 1ull << sec_btn[u->section];
     if (u->octave < 0) l |= 1ull << TFM_BTN_OCT_DOWN;
@@ -726,10 +753,200 @@ static void draw_filter(tfm_ui *u)
     footer(u, P_FILTER[u->page[S_FILTER]]);
 }
 
+/* ---- modulazioni ---- */
+/* numero con decimali (es. 2.35) */
+static void fmt_fixed(char *out, float v, unsigned dec)
+{
+    unsigned scale = dec == 2 ? 100u : dec == 1 ? 10u : 1u;
+    unsigned n = (unsigned)(v * (float)scale + 0.5f), ip = n / scale, fp = n % scale;
+    char tmp[8]; int k = 0;
+    do { tmp[k++] = (char)('0' + ip % 10); ip /= 10; } while (ip && k < 6);
+    int o = 0;
+    while (k) out[o++] = tmp[--k];
+    if (dec) {
+        out[o++] = '.';
+        if (dec == 2) out[o++] = (char)('0' + fp / 10);
+        out[o++] = (char)('0' + fp % 10);
+    }
+    out[o] = 0;
+}
+/* stessa scala del motore: 0.03 Hz * 2^(v * 9.38 / 127) */
+static float lfo_rate_hz(uint8_t v) { float h = 0.03f; for (unsigned k = 0; k < v; k++) h *= 1.05252f; return h; }
+static float slow_rate_hz(uint8_t v) { float h = 0.5f; for (unsigned k = 0; k < v; k++) h *= 1.02543f; return h; }  /* vibrato e tremolo */
+/* forme degli LFO (come nel motore), valore -1..1; il NOIZ disegnato a gradini fissi */
+static float lfo_draw(unsigned shape, unsigned mode, float t)
+{
+    t -= (float)(int)t;
+    float s;
+    switch (shape) {
+    case 0: s = 1.f - 4.f * (t < 0.5f ? 0.5f - t : t - 0.5f); break;
+    case 1: s = 2.f * t - 1.f; break;
+    case 2: s = 1.f - 2.f * t; break;
+    case 3: s = t < 0.5f ? 1.f : -1.f; break;
+    case 4: { static const int8_t st[8] = { 3, -7, 6, -2, 8, -5, 1, -8 }; s = (float)st[(int)(t * 8.f) & 7] * 0.125f; } break;
+    default: s = sin1(t); break;
+    }
+    switch (mode) {
+    case 1: return 0.5f + 0.5f * s;
+    case 2: return -(0.5f + 0.5f * s);
+    case 3: return s < 0 ? -s : s;
+    case 4: return s < 0 ? s : -s;
+    default: return s;
+    }
+}
+static void draw_curve(tfm_ui *u, int bx, int by, int bw, int bh, unsigned shape, unsigned mode, float cycles, uint16_t c)
+{
+    int mid = by + bh / 2;
+    frame(u, bx, by, bw, bh, PANEL);
+    fill(u, bx + 1, mid, bw - 2, 1, PANEL);
+    int py = mid;
+    for (int i = 0; i < bw - 4; i++) {
+        float v = lfo_draw(shape, mode, (float)i / (float)(bw - 4) * cycles);
+        int yy = mid - (int)(v * (float)(bh / 2 - 4));
+        if (i) line(u, bx + 1 + i, py, bx + 2 + i, yy, c);
+        py = yy;
+    }
+}
+/* elenco dei 4 collegamenti di una chain, con barra della quantita' */
+static void draw_links(tfm_ui *u, int y, unsigned base, int hl)
+{
+    const uint8_t *p = u->patch.p;
+    for (unsigned i = 0; i < TFM_LINKS; i++) {
+        int yy = y + (int)i * 18;
+        unsigned t = p[base + 2 * i] < TFM_MOD_TARGETS ? p[base + 2 * i] : 0;
+        int a = (int)(p[base + 2 * i + 1] > 40 ? 40 : p[base + 2 * i + 1]) - TFM_AMT_ZERO;
+        int cur = hl >= 0 && (int)(i / 2) == hl;
+        uint16_t c = t && a ? GREEN : DIM;
+        if (cur) fill(u, 4, yy - 3, 232, 16, PANEL);
+        char n[2] = { (char)('1' + i), 0 };
+        text(u, 8, yy + 2, n, 1, cur ? AMBER : DIM);
+        text(u, 20, yy + 2, tfm_mod_target_names[t], 1, t ? TEXT : DIM);
+        int cx = 168;
+        fill(u, cx - 60, yy + 5, 121, 1, DIM);
+        fill(u, cx, yy, 1, 11, DIM);
+        int w = a * 3;
+        if (w > 0) fill(u, cx + 1, yy + 2, w, 7, c);
+        if (w < 0) fill(u, cx + w, yy + 2, -w, 7, c);
+    }
+}
+static void draw_lfo(tfm_ui *u)
+{
+    static const char *const sub[3] = { "PRINCIPALE", "CHAIN 1-2", "CHAIN 3-4" };
+    const uint8_t *p = u->patch.p;
+    unsigned pg = u->page[S_LFO], k = pg / 3, sp = pg % 3;
+    char title[8] = "LFO 1";
+    if (k < 3) title[4] = (char)('1' + k);
+    header(u, k < 3 ? title : "MOD ENV", sub[sp]);
+    if (k < 3) {
+        const uint8_t *q = p + TFM_LFO_BASE(k);
+        unsigned sh = q[1] % TFM_LFO_SHAPES, md = q[2] % TFM_LFO_MODES;
+        if (sp == 0) {
+            draw_curve(u, 6, 36, 228, 92, sh, md, 2.f, knob_color[k]);
+            char hz[12];
+            fmt_fixed(hz, lfo_rate_hz(q[0]), 2);
+            int x = text(u, 6, 140, hz, 2, TEXT);
+            text(u, x + 4, 147, "HZ", 1, DIM);
+            text(u, 120, 140, q[3] ? "RETRIG" : "LIBERO", 2, q[3] ? AMBER : DIM);
+            /* collegamenti attivi in breve */
+            unsigned n = 0;
+            for (unsigned i = 0; i < TFM_LINKS; i++)
+                if (p[TFM_LFO_LINK(k, i)] && p[TFM_LFO_LINK(k, i) + 1] != TFM_AMT_ZERO) n++;
+            char s[16] = "CHAIN: 0 ATTIVE";
+            s[7] = (char)('0' + n);
+            text(u, 6, 168, s, 1, n ? GREEN : DIM);
+        } else {
+            draw_curve(u, 6, 34, 228, 40, sh, md, 3.f, knob_color[k]);
+            draw_links(u, 84, TFM_LFO_LINK(k, 0), (int)sp - 1);
+        }
+    } else {
+        if (sp == 0) draw_adsr(u, 6, 36, 228, 128, p[TFM_P_MENV_A], p[TFM_P_MENV_D], p[TFM_P_MENV_S], p[TFM_P_MENV_R], knob_color[3]);
+        else {
+            draw_adsr(u, 6, 34, 228, 40, p[TFM_P_MENV_A], p[TFM_P_MENV_D], p[TFM_P_MENV_S], p[TFM_P_MENV_R], knob_color[3]);
+            draw_links(u, 84, TFM_MENV_LINK(0), (int)sp - 1);
+        }
+    }
+    page_dots(u, 3, sp);
+    footer(u, P_LFO[pg]);
+}
+
+static void draw_glo_mod(tfm_ui *u, unsigned pg)
+{
+    const uint8_t *p = u->patch.p;
+    char s[12];
+    if (pg == 3) {   /* vibrato */
+        static const uint8_t vshape[5] = { 5, 3, 1, 2, 4 };
+        unsigned vm = p[TFM_P_VIB_MODE] % 3;
+        draw_curve(u, 6, 36, 228, 92, vshape[p[TFM_P_VIB_WAVE] % 5], vm == 1 ? 1 : vm == 2 ? 2 : 0, 4.f, knob_color[1]);
+        fmt_fixed(s, slow_rate_hz(p[TFM_P_VIB_RATE]), 1);
+        int x = text(u, 6, 140, s, 2, TEXT);
+        text(u, x + 4, 147, "HZ", 1, DIM);
+        float d = (float)p[TFM_P_VIB_DEPTH] / 127.f;
+        fmt_fixed(s, d * d * 200.f, 0);
+        x = text(u, 120, 140, s, 2, p[TFM_P_VIB_DEPTH] ? AMBER : DIM);
+        text(u, x + 4, 147, "CENT", 1, DIM);
+    } else if (pg == 4) {   /* tremolo: L e R sfasati */
+        int bx = 6, by = 36, bw = 228, bh = 92;
+        float d = (float)p[TFM_P_TREM_DEPTH] / 127.f, off = (float)p[TFM_P_TREM_PHASE] * (0.5f / 127.f);
+        frame(u, bx, by, bw, bh, PANEL);
+        for (int ch = 0; ch < 2; ch++) {
+            int py = 0;
+            for (int i = 0; i < bw - 4; i++) {
+                float t = (float)i / (float)(bw - 4) * 3.f + (ch ? off : 0.f);
+                float g = 1.f - d * (0.5f + 0.5f * sin1(t));
+                int yy = by + bh - 4 - (int)(g * (float)(bh - 10));
+                if (i) line(u, bx + 1 + i, py, bx + 2 + i, yy, knob_color[ch ? 3 : 1]);
+                py = yy;
+            }
+        }
+        text(u, bx + 6, by + 6, "L", 1, knob_color[1]);
+        text(u, bx + 18, by + 6, "R", 1, knob_color[3]);
+        fmt_fixed(s, slow_rate_hz(p[TFM_P_TREM_RATE]), 1);
+        int x = text(u, 6, 140, s, 2, TEXT);
+        text(u, x + 4, 147, "HZ", 1, DIM);
+        fmt_fixed(s, (float)p[TFM_P_TREM_PHASE] * (180.f / 127.f), 0);
+        x = text(u, 120, 140, s, 2, TEXT);
+        text(u, x + 4, 147, "GRADI L/R", 1, DIM);
+    } else {   /* pitch: glide, rise, fall */
+        int bx = 6, by = 36, bw = 228, bh = 92;
+        frame(u, bx, by, bw, bh, PANEL);
+        int lo = by + bh - 14, hi = by + 24;
+        float gl = (float)p[TFM_P_GLIDE] / 127.f, rise = (float)p[TFM_P_RISE] / 127.f, fall = (float)p[TFM_P_FALL] / 127.f;
+        int x1 = bx + 70, xr = bx + 160;
+        line(u, bx + 4, lo, x1, lo, DIM);   /* nota precedente */
+        /* glide verso la nuova nota (piu' lungo con GLIDE), con il rise che parte piu' in basso */
+        int gw = 2 + (int)(gl * 60.f), py = lo;
+        for (int i = 0; i <= xr - x1; i++) {
+            float tg = gw > 2 ? (float)i / (float)gw : 9.f;
+            float e = tg > 3.f ? 0.f : 1.f;
+            for (int m = 0; m < 3 && tg <= 3.f; m++) e *= 1.f - tg / 3.f;
+            float r = (float)i / 18.f;
+            float re = r > 3.f ? 0.f : (1.f - r / 3.f) * (1.f - r / 3.f);
+            int yy = hi + (int)((float)(lo - hi) * e) + (int)(rise * 40.f * re);
+            if (yy > by + bh - 3) yy = by + bh - 3;
+            if (i) line(u, x1 + i - 1, py, x1 + i, yy, knob_color[0]);
+            py = yy;
+        }
+        /* fall dopo il rilascio */
+        for (int i = 0; i < bx + bw - 4 - xr; i++) {
+            float f = (float)i / (8.f + fall * 30.f);
+            int yy = hi + (int)(fall * 50.f * (1.f - 1.f / (1.f + f)));
+            if (yy > by + bh - 3) yy = by + bh - 3;
+            if (i) line(u, xr + i - 1, py, xr + i, yy, knob_color[3]);
+            py = yy;
+        }
+        fill(u, xr, by + 2, 1, bh - 4, PANEL);
+        text(u, xr + 4, by + 6, "NOTE OFF", 1, DIM);
+        text(u, 6, 140, p[TFM_P_GLIDE_MODE] ? "GLIDE LEGATO" : "GLIDE SEMPRE", 2, p[TFM_P_GLIDE] ? AMBER : DIM);
+    }
+    page_dots(u, GLO_PAGES, pg);
+    footer(u, P_GLO[pg]);
+}
+
 static void draw_glo(tfm_ui *u)
 {
-    static const char *const sub[3] = { "1 VOCI", "2 LAYER", "3 LIVELLO" };
+    static const char *const sub[GLO_PAGES] = { "1 VOCI", "2 LAYER", "3 LIVELLO", "4 VIBRATO", "5 TREMOLO", "6 PITCH" };
     header(u, "GLOBAL", sub[u->page[S_GLO]]);
+    if (u->page[S_GLO] >= 3) { draw_glo_mod(u, u->page[S_GLO]); return; }
     const uint8_t *p = u->patch.p;
     unsigned m = mode_cur(u);
     /* le 8 voci: quadratini accesi in base al modo e al limite di polifonia */
@@ -753,7 +970,7 @@ static void draw_glo(tfm_ui *u)
     int x = text(u, 6, 134, p[TFM_P_ALGO2] ? "PARALLELO" : "SERIE", 2, TEXT);
     x = text(u, x + 12, 134, tv, 2, knob_color[3]);
     text(u, x + 4, 141, "ST", 1, DIM);
-    page_dots(u, 3, u->page[S_GLO]);
+    page_dots(u, GLO_PAGES, u->page[S_GLO]);
     footer(u, P_GLO[u->page[S_GLO]]);
 }
 
@@ -890,10 +1107,10 @@ static void draw_fx(tfm_ui *u)
 
 static void draw_info(tfm_ui *u)
 {
-    static const char *const names[TFM_BTN_COUNT] = { "", "", "", "", "", "LFO", "", "", "", "SAVE", "ARP", "SEQ", "PLAY", "REC" };
-    static const char *const what[TFM_BTN_COUNT] = { "", "", "", "", "", "3 LFO E CHAIN", "", "", "", "SALVA PRESET",
+    static const char *const names[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "SAVE", "ARP", "SEQ", "PLAY", "REC" };
+    static const char *const what[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "SALVA PRESET",
                                                      "ARPEGGIATORE", "SEQUENCER 128", "SEQUENCER", "REGISTRA STEP" };
-    static const char *const phase[TFM_BTN_COUNT] = { "", "", "", "", "", "FASE 4", "", "", "", "FASE 5", "FASE 5", "FASE 5", "FASE 5", "FASE 5" };
+    static const char *const phase[TFM_BTN_COUNT] = { "", "", "", "", "", "", "", "", "", "FASE 5", "FASE 5", "FASE 5", "FASE 5", "FASE 5" };
     unsigned b = u->info < TFM_BTN_COUNT ? u->info : 0;
     header(u, names[b], 0);
     text(u, 6, 60, what[b], 2, TEXT);
@@ -912,6 +1129,7 @@ static void scene(tfm_ui *u)
     case S_GLO: draw_glo(u); break;
     case S_INFO: draw_info(u); break;
     case S_FX: draw_fx(u); break;
+    case S_LFO: draw_lfo(u); break;
     default: draw_home(u); break;
     }
 }

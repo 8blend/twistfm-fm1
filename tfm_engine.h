@@ -52,11 +52,41 @@ enum {
     TFM_P_REV_TYPE, TFM_P_REV_DECAY, TFM_P_REV_TONE, TFM_P_REV_MIX, TFM_P_REV_PREDLY, TFM_P_REV_MOD, TFM_P_REV_SHIM,
     /* catena: effetto in ogni slot, 0 vuoto, 1 DIST, 2 PHASER, 3 TAPE, 4 REVERB */
     TFM_P_FX_SLOT1, TFM_P_FX_SLOT2, TFM_P_FX_SLOT3, TFM_P_FX_SLOT4,
+    /* --- modulazioni (fase 4) --- */
+    /* 3 LFO: velocita', forma (TRI SAW RAMP RECT NOIZ SINE), modo (BIPO UNI+ UNI- REC+ REC-), retrigger */
+    TFM_P_LFO1_RATE, TFM_P_LFO1_SHAPE, TFM_P_LFO1_MODE, TFM_P_LFO1_RETRIG,
+    TFM_P_LFO2_RATE, TFM_P_LFO2_SHAPE, TFM_P_LFO2_MODE, TFM_P_LFO2_RETRIG,
+    TFM_P_LFO3_RATE, TFM_P_LFO3_SHAPE, TFM_P_LFO3_MODE, TFM_P_LFO3_RETRIG,
+    /* chain: 4 collegamenti per LFO, ognuno destinazione (TFM_MOD_*) e quantita' (0..40, 20 = zero: -20..+20) */
+    TFM_P_LFO1_LINKS, TFM_P_LFO2_LINKS = TFM_P_LFO1_LINKS + 8, TFM_P_LFO3_LINKS = TFM_P_LFO2_LINKS + 8,
+    /* inviluppo di modulazione per voce: ADSR e 4 collegamenti */
+    TFM_P_MENV_A = TFM_P_LFO3_LINKS + 8, TFM_P_MENV_D, TFM_P_MENV_S, TFM_P_MENV_R,
+    TFM_P_MENV_LINKS,
+    /* vibrato: velocita', profondita', forma (SINE RECT SAW RAMP NOIZ), modo (BIPO UP DOWN) */
+    TFM_P_VIB_RATE = TFM_P_MENV_LINKS + 8, TFM_P_VIB_DEPTH, TFM_P_VIB_WAVE, TFM_P_VIB_MODE,
+    /* tremolo stereo: velocita', profondita', sfasamento L/R */
+    TFM_P_TREM_RATE, TFM_P_TREM_DEPTH, TFM_P_TREM_PHASE,
+    /* glide (0 spento), modo (ALL LEGATO), rise e fall del pitch */
+    TFM_P_GLIDE, TFM_P_GLIDE_MODE, TFM_P_RISE, TFM_P_FALL,
     TFM_P_COUNT
 };
 
 #define TFM_FLT_MODES 15
 #define TFM_VOICE_MODES 7
+#define TFM_LFOS 3
+#define TFM_LFO_BASE(k) (TFM_P_LFO1_RATE + 4 * (k))
+#define TFM_LFO_LINK(k, i) (TFM_P_LFO1_LINKS + 8 * (k) + 2 * (i))   /* destinazione; +1 = quantita' */
+#define TFM_MENV_LINK(i) (TFM_P_MENV_LINKS + 2 * (i))
+#define TFM_LINKS 4
+#define TFM_AMT_ZERO 20
+#define TFM_LFO_SHAPES 6
+#define TFM_LFO_MODES 5
+/* destinazioni delle chain */
+enum { TFM_MOD_NONE, TFM_MOD_CUTOFF, TFM_MOD_RES, TFM_MOD_HEAT, TFM_MOD_FENV, TFM_MOD_WOBBLE,
+       TFM_MOD_OPVOL, TFM_MOD_OPWAVE = TFM_MOD_OPVOL + 6, TFM_MOD_OPMULT = TFM_MOD_OPWAVE + 6,
+       TFM_MOD_FB1 = TFM_MOD_OPMULT + 6, TFM_MOD_FB5, TFM_MOD_PITCH, TFM_MOD_L2TUNE, TFM_MOD_FAT, TFM_MOD_VOLUME,
+       TFM_MOD_DRIVE, TFM_MOD_PHDEPTH, TFM_MOD_DLYTIME, TFM_MOD_REVMIX, TFM_MOD_TARGETS };
+extern const char *const tfm_mod_target_names[TFM_MOD_TARGETS];
 /* algoritmi layer 1: 0..4 come la TWISTfm, 5..9 extra */
 #define TFM_ALGOS 10
 #define TFM_ALGOS_ORIGINAL 5

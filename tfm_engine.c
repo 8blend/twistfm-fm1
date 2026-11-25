@@ -132,6 +132,27 @@ static const char *const flt_names[TFM_FLT_MODES] = {
     "LP4", "LP3", "LP2", "LP1", "BP4", "BP2", "NOTCH", "PHASE",
     "HP1", "HP2", "HP3", "H2+L", "H3+L", "NO+L", "PH+L"
 };
+/* destinazioni delle chain: parametro del preset (255 = pitch) */
+#define MOD_PITCH_ID 255u
+static const uint8_t mod_param[TFM_MOD_TARGETS] = {
+    0, TFM_P_CUTOFF, TFM_P_RES, TFM_P_HEAT, TFM_P_FLT_ENV, TFM_P_WOBBLE,
+    TFM_OP_BASE(0) + TFM_OPP_VOL, TFM_OP_BASE(1) + TFM_OPP_VOL, TFM_OP_BASE(2) + TFM_OPP_VOL,
+    TFM_OP_BASE(3) + TFM_OPP_VOL, TFM_OP_BASE(4) + TFM_OPP_VOL, TFM_OP_BASE(5) + TFM_OPP_VOL,
+    TFM_OP_BASE(0) + TFM_OPP_WAVE, TFM_OP_BASE(1) + TFM_OPP_WAVE, TFM_OP_BASE(2) + TFM_OPP_WAVE,
+    TFM_OP_BASE(3) + TFM_OPP_WAVE, TFM_OP_BASE(4) + TFM_OPP_WAVE, TFM_OP_BASE(5) + TFM_OPP_WAVE,
+    TFM_OP_BASE(0) + TFM_OPP_MULT, TFM_OP_BASE(1) + TFM_OPP_MULT, TFM_OP_BASE(2) + TFM_OPP_MULT,
+    TFM_OP_BASE(3) + TFM_OPP_MULT, TFM_OP_BASE(4) + TFM_OPP_MULT, TFM_OP_BASE(5) + TFM_OPP_MULT,
+    TFM_P_FB1, TFM_P_FB2, MOD_PITCH_ID, TFM_P_L2_TUNE, TFM_P_FAT, TFM_P_VOLUME,
+    TFM_P_DIST_DRIVE, TFM_P_PH_DEPTH, TFM_P_DLY_TIME, TFM_P_REV_MIX
+};
+const char *const tfm_mod_target_names[TFM_MOD_TARGETS] = {
+    "--", "CUTOFF", "RES", "HEAT", "F.ENV", "WOBBLE",
+    "OP1 VOL", "OP2 VOL", "OP3 VOL", "OP4 VOL", "OP5 VOL", "OP6 VOL",
+    "OP1 WAV", "OP2 WAV", "OP3 WAV", "OP4 WAV", "OP5 WAV", "OP6 WAV",
+    "OP1 MUL", "OP2 MUL", "OP3 MUL", "OP4 MUL", "OP5 MUL", "OP6 MUL",
+    "FB 1", "FB 5", "PITCH", "L2 TUNE", "FAT", "VOLUME",
+    "DRIVE", "PH DEPT", "DLY TIM", "REV MIX"
+};
 static const char *const wave_names[8] = {
     "SINE", "HALF", "ABS", "PULS", "EVEN", "EABS", "SQUA", "DSQR"
 };
@@ -219,6 +240,9 @@ typedef struct {
     float detune;     /* semitoni (Fat) */
     float pan;        /* 0 = sinistra, 1 = destra */
     float gain;       /* compensazione di volume nei modi a voci sovrapposte */
+    tfm_adsr menv;    /* inviluppo di modulazione */
+    float pitch_cur;  /* nota che suona ora (glide), in semitoni */
+    float rise_off, fall_off;   /* scostamenti di pitch di Rise e Fall */
 } tfm_voice;
 
 struct tfm_engine {
@@ -232,6 +256,10 @@ struct tfm_engine {
     uint8_t held[16], nheld;   /* tasti tenuti, in ordine (per i modi mono) */
     int8_t mono_note;          /* nota che suona nei modi mono, -1 nessuna */
     uint8_t rr, wide;          /* contatori per ROUND ROBIN e WIDE8 */
+    float lfo_ph[TFM_LFOS], lfo_hold[TFM_LFOS];   /* fase e valore campionato (NOIZ) */
+    float vib_ph, vib_hold, trem_ph;
+    float last_pitch;          /* l'ultima nota suonata: da qui parte il glide */
+    uint32_t rnd;
 };
 
 unsigned tfm_engine_size(void) { return (sizeof(tfm_engine) + 7u) & ~7u; }
@@ -260,10 +288,9 @@ static void opl_keycode(float hz, unsigned *block, unsigned *fnum)
     *fnum = (unsigned)fn;
 }
 
-static void voice_setup_ops(tfm_engine *e, tfm_voice *v, int retrigger)
+/* p: parametri effettivi (con le modulazioni); base: pitch in semitoni MIDI */
+static void voice_setup_ops(tfm_voice *v, int retrigger, const uint8_t *p, float base)
 {
-    const uint8_t *p = e->patch.p;
-    float base = (float)v->note + v->detune + (float)e->bend_q16 * (1.f / 65536.f);
     float l2 = (float)((int)p[TFM_P_L2_TUNE] - 64);
     if (l2 > 24.f) l2 = 24.f;
     if (l2 < -24.f) l2 = -24.f;
@@ -438,6 +465,15 @@ void tfm_patch_init(tfm_patch *patch)
     p[TFM_P_REV_PREDLY] = 10; p[TFM_P_REV_MOD] = 40; p[TFM_P_REV_SHIM] = 80;
     /* catena di partenza DIST > PHASER > TAPE > REVERB, tutti con MIX a 0 */
     p[TFM_P_FX_SLOT1] = 1; p[TFM_P_FX_SLOT2] = 2; p[TFM_P_FX_SLOT3] = 3; p[TFM_P_FX_SLOT4] = 4;
+    /* modulazioni: tutte scollegate (quantita' a zero) */
+    for (unsigned k = 0; k < TFM_LFOS; k++) {
+        p[TFM_LFO_BASE(k)] = (uint8_t)(50 + 15 * k);
+        for (unsigned i = 0; i < TFM_LINKS; i++) p[TFM_LFO_LINK(k, i) + 1] = TFM_AMT_ZERO;
+    }
+    for (unsigned i = 0; i < TFM_LINKS; i++) p[TFM_MENV_LINK(i) + 1] = TFM_AMT_ZERO;
+    p[TFM_P_MENV_D] = 64; p[TFM_P_MENV_R] = 40;
+    p[TFM_P_VIB_RATE] = 70;
+    p[TFM_P_TREM_RATE] = 60; p[TFM_P_TREM_PHASE] = 64;
 }
 
 tfm_engine *tfm_engine_init(void *memory)
@@ -449,6 +485,7 @@ tfm_engine *tfm_engine_init(void *memory)
         for (unsigned k = 0; k < TFM_OPS; k++) e->v[i].op[k].env = EG_MAX;
     }
     e->mono_note = -1;
+    e->rnd = 0x12345u;
     tfm_fx_init(&e->fx);
     tfm_patch_init(&e->patch);
     return e;
@@ -464,7 +501,7 @@ void tfm_set_param(tfm_engine *e, unsigned id, uint8_t value)
     e->dirty = 1;
 }
 uint8_t tfm_get_param(const tfm_engine *e, unsigned id) { return id < TFM_P_COUNT ? e->patch.p[id] : 0; }
-void tfm_pitch_bend(tfm_engine *e, int q16) { e->bend_q16 = q16; e->dirty = 1; }
+void tfm_pitch_bend(tfm_engine *e, int q16) { e->bend_q16 = q16; }
 const char *tfm_filter_mode_name(unsigned m) { return m < TFM_FLT_MODES ? flt_names[m] : "?"; }
 const char *tfm_wave_name(unsigned w) { return wave_names[w & 7]; }
 
@@ -479,8 +516,11 @@ static unsigned flt_mode_of(const tfm_engine *e)
     return m < TFM_FLT_MODES ? m : f_to((uint8_t)m, TFM_FLT_MODES);
 }
 
-static void start_voice(tfm_engine *e, tfm_voice *v, uint8_t note, uint8_t vel, float detune, float pan)
+static float bend_semis(const tfm_engine *e) { return (float)e->bend_q16 * (1.f / 65536.f); }
+
+static void start_voice(tfm_engine *e, tfm_voice *v, uint8_t note, uint8_t vel, float detune, float pan, int glide)
 {
+    const uint8_t *p = e->patch.p;
     v->note = (int8_t)note;
     v->vel = vel;
     v->gate = 1;
@@ -489,13 +529,22 @@ static void start_voice(tfm_engine *e, tfm_voice *v, uint8_t note, uint8_t vel, 
     v->pan = pan;
     v->fenv.stage = 1;
     v->fenv.level = 0.f;
-    voice_setup_ops(e, v, 1);
+    v->menv.stage = 1;
+    v->menv.level = 0.f;
+    /* glide: parte dall'ultima nota suonata */
+    v->pitch_cur = glide ? e->last_pitch : (float)note;
+    v->rise_off = -(float)p[TFM_P_RISE] * (12.f / 127.f);
+    v->fall_off = 0.f;
+    for (unsigned k = 0; k < TFM_LFOS; k++)            /* retrigger degli LFO */
+        if (p[TFM_LFO_BASE(k) + 3]) e->lfo_ph[k] = 0.f;
+    voice_setup_ops(v, 1, p, v->pitch_cur + detune + bend_semis(e) + v->rise_off);
 }
 
 static void release_voice(tfm_voice *v)
 {
     v->gate = 0;
     v->fenv.stage = 3;
+    v->menv.stage = 3;
     for (unsigned k = 0; k < TFM_OPS; k++)
         if (v->op[k].stage != EG_OFF) v->op[k].stage = EG_RELEASE;
 }
@@ -524,21 +573,32 @@ static voice_layout layout_of(const tfm_engine *e)
     return l;
 }
 
+/* il glide vale per questa nota? ALL: sempre; LEGATO: solo se un'altra nota e' tenuta */
+static int glide_now(const tfm_engine *e)
+{
+    if (!e->patch.p[TFM_P_GLIDE] || e->last_pitch <= 0.f) return 0;
+    if (!e->patch.p[TFM_P_GLIDE_MODE]) return 1;
+    for (unsigned i = 0; i < TFM_VOICES; i++) if (e->v[i].gate) return 1;
+    return 0;
+}
+
 /* Fa suonare 'note' sullo slot indicato (gruppo di voci). */
 static void play_slot(tfm_engine *e, const voice_layout *l, unsigned slot, uint8_t note, uint8_t vel)
 {
     float fat = (float)e->patch.p[TFM_P_FAT] * (0.5f / 127.f); /* fino a +-0.5 semitoni */
     unsigned mode = mode_of(e);
+    int glide = glide_now(e);
     for (unsigned i = 0; i < l->group; i++) {
         unsigned vi = slot * l->group + i;
         float pan;
         if (l->group > 1) pan = l->group == 2 ? (i ? 0.9f : 0.1f) : 0.1f + 0.8f * (float)i / (float)(l->group - 1);
         else if (mode == 5) { pan = (e->wide & 1) ? 0.95f : 0.05f; }
         else pan = (vi & 1) ? 0.35f : 0.65f;
-        start_voice(e, &e->v[vi], note, vel, fat * fat_spread[l->group > 1 ? i : vi], pan);
+        start_voice(e, &e->v[vi], note, vel, fat * fat_spread[l->group > 1 ? i : vi], pan, glide);
         e->v[vi].gain = l->group == 1 ? 1.f : l->group == 2 ? 0.71f : l->group == 4 ? 0.5f : 0.36f;
     }
     if (mode == 5) e->wide++;
+    e->last_pitch = (float)note;
 }
 
 /* Cambia nota a uno slot senza riattaccare gli inviluppi (legato mono). */
@@ -547,8 +607,9 @@ static void glide_slot(tfm_engine *e, const voice_layout *l, unsigned slot, uint
     for (unsigned i = 0; i < l->group; i++) {
         tfm_voice *v = &e->v[slot * l->group + i];
         v->note = (int8_t)note;
-        voice_setup_ops(e, v, 0);
+        if (!e->patch.p[TFM_P_GLIDE]) v->pitch_cur = (float)note;   /* senza glide: salto immediato */
     }
+    e->last_pitch = (float)note;
 }
 
 static int mono_target(const tfm_engine *e)
@@ -635,20 +696,20 @@ void tfm_all_notes_off(tfm_engine *e)
     for (unsigned i = 0; i < TFM_VOICES; i++) if (e->v[i].gate) release_voice(&e->v[i]);
 }
 
-/* Avanza l'inviluppo del filtro di un blocco e restituisce il livello 0..1. */
-static float fenv_step(tfm_adsr *a, const uint8_t *p, unsigned n)
+/* Avanza un ADSR di un blocco e restituisce il livello 0..1 (filtro e modulazione). */
+static float adsr_step(tfm_adsr *a, uint8_t A, uint8_t D, uint8_t S, uint8_t R, unsigned n)
 {
-    float s = (float)p[TFM_P_FLT_S] * (1.f / 127.f);
+    float s = (float)S * (1.f / 127.f);
     switch (a->stage) {
     case 1: /* attack: punta a 1.2 per una curva "analogica" */
-        a->level += (1.2f - a->level) * adsr_coef(p[TFM_P_FLT_A], n);
+        a->level += (1.2f - a->level) * adsr_coef(A, n);
         if (a->level >= 1.f) { a->level = 1.f; a->stage = 2; }
         break;
     case 2:
-        a->level += (s - a->level) * adsr_coef(p[TFM_P_FLT_D], n);
+        a->level += (s - a->level) * adsr_coef(D, n);
         break;
     case 3:
-        a->level += (0.f - a->level) * adsr_coef(p[TFM_P_FLT_R], n);
+        a->level += (0.f - a->level) * adsr_coef(R, n);
         if (a->level < 0.0001f) { a->level = 0.f; a->stage = 0; }
         break;
     default:
@@ -657,6 +718,67 @@ static float fenv_step(tfm_adsr *a, const uint8_t *p, unsigned n)
     return a->level;
 }
 
+/* ---------------- modulazioni ---------------- */
+
+static inline float rnd_bipolar(tfm_engine *e)
+{
+    e->rnd = e->rnd * 1664525u + 1013904223u;
+    return (float)(int32_t)e->rnd * (1.f / 2147483648.f);
+}
+/* seno in cicli (Bhaskara) */
+static inline float sin_cyc(float t)
+{
+    t -= (float)(int)t;
+    if (t < 0) t += 1.f;
+    float x = t < 0.5f ? t : t - 0.5f, q = x * (1.f - 2.f * x), y = 32.f * q / (5.f - 8.f * q);
+    return t < 0.5f ? y : -y;
+}
+/* forme: 0 TRI 1 SAW 2 RAMP 3 RECT 4 NOIZ 5 SINE; valore -1..1 */
+static float lfo_shape(unsigned shape, float ph, float hold)
+{
+    switch (shape) {
+    case 0: return 1.f - 4.f * (ph < 0.5f ? 0.5f - ph : ph - 0.5f);
+    case 1: return 2.f * ph - 1.f;
+    case 2: return 1.f - 2.f * ph;
+    case 3: return ph < 0.5f ? 1.f : -1.f;
+    case 4: return hold;
+    default: return sin_cyc(ph);
+    }
+}
+/* modi: 0 BIPO 1 UNI+ 2 UNI- 3 REC+ 4 REC- */
+static float lfo_mode(unsigned mode, float s)
+{
+    switch (mode) {
+    case 1: return 0.5f + 0.5f * s;
+    case 2: return -(0.5f + 0.5f * s);
+    case 3: return s < 0 ? -s : s;
+    case 4: return s < 0 ? s : -s;
+    default: return s;
+    }
+}
+/* velocita': fader 0..127 -> 0.03 .. 20 Hz */
+static inline float lfo_hz(uint8_t v) { return 0.03f * tfm_exp2f((float)v * (9.38f / 127.f)); }
+
+/* accumulo delle modulazioni su una copia dei parametri */
+typedef struct { uint8_t id[24]; float d[24]; unsigned n; float pitch; } mod_acc;
+static inline void acc_add(mod_acc *m, unsigned target, int amt, float val)
+{
+    if (!target || target >= TFM_MOD_TARGETS || !amt) return;
+    float x = (float)amt * (1.f / 20.f) * val;   /* -1..1 della corsa */
+    unsigned id = mod_param[target];
+    if (id == MOD_PITCH_ID) { m->pitch += x * 12.f; return; }   /* fino a +-12 semitoni */
+    for (unsigned i = 0; i < m->n; i++) if (m->id[i] == id) { m->d[i] += x * 127.f; return; }
+    if (m->n < 24) { m->id[m->n] = (uint8_t)id; m->d[m->n++] = x * 127.f; }
+}
+static inline void acc_apply(const mod_acc *m, uint8_t *eff)
+{
+    for (unsigned i = 0; i < m->n; i++) {
+        float v = (float)eff[m->id[i]] + m->d[i];
+        eff[m->id[i]] = (uint8_t)(v < 0.f ? 0.f : v > 127.f ? 127.f : v + 0.5f);
+    }
+}
+static inline int link_amt(const uint8_t *p, unsigned id) { return (int)p[id + 1] - TFM_AMT_ZERO; }
+
 #define TFM_SUB 32u /* sotto-blocco per i controlli */
 
 void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
@@ -664,47 +786,120 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
     const uint8_t *p = e->patch.p;
     unsigned algo = algo_of(e);
     unsigned algo2 = p[TFM_P_ALGO2] ? 1u : 0u;
-    unsigned fb1 = f_to(p[TFM_P_FB1], 8), fb2 = f_to(p[TFM_P_FB2], 8);
-    if (e->dirty) {
-        for (unsigned i = 0; i < TFM_VOICES; i++)
-            if (e->v[i].note >= 0) voice_setup_ops(e, &e->v[i], 0);
-        e->dirty = 0;
-    }
-    flt_ctl fc;
-    fc.ms20 = p[TFM_P_FLAVOUR] ? 1 : 0;
-    float res = (float)p[TFM_P_RES] * (1.f / 127.f);
-    fc.k = fc.ms20 ? res * 5.6f : res * 4.05f; /* MS20 va oltre l'autooscillazione */
-    float heat = (float)p[TFM_P_HEAT] * (1.f / 127.f);
-    fc.drive = 0.35f + heat * heat * 6.f;
-    fc.makeup = 1.f / (fc.drive < 1.f ? 0.35f + 0.65f * fc.drive : 1.f + 0.25f * (fc.drive - 1.f));
-    fc.wobble = (float)p[TFM_P_WOBBLE] * (2.f / 127.f);
-    fc.mix = flt_mix[flt_mode_of(e)];
-    float cutoff_oct = (float)p[TFM_P_CUTOFF] * (10.f / 127.f);     /* 20 Hz .. 20 kHz */
-    float env_oct = (float)p[TFM_P_FLT_ENV] * (8.f / 127.f);
+    const float *mixc = flt_mix[flt_mode_of(e)];
+    uint8_t ms20 = p[TFM_P_FLAVOUR] ? 1 : 0;
     float kt = (float)(p[TFM_P_KEYTRACK] > 10 ? 10 : p[TFM_P_KEYTRACK]) * 0.1f;
-    float master = (float)p[TFM_P_VOLUME] * (1.f / 127.f);
-    master = master * master * 8388607.f * 0.28f;
+    float bend = bend_semis(e);
+    int menv_on = 0;
+    for (unsigned i = 0; i < TFM_LINKS; i++)
+        if (p[TFM_MENV_LINK(i)] && link_amt(p, TFM_MENV_LINK(i))) menv_on = 1;
+    /* tempi del glide e di rise/fall, per sotto-blocco */
+    float gl_t = p[TFM_P_GLIDE] ? 0.005f * tfm_exp2f((float)p[TFM_P_GLIDE] * (9.f / 127.f)) : 0.f;   /* fino a ~2.6 s */
+    float sub = (float)TFM_SUB / (float)TFM_SAMPLE_RATE;
+    float gl_c = gl_t > 0.f ? 1.f - tfm_exp2f(-3.f * 1.4427f * sub / gl_t) : 1.f;
+    float rise_c = 1.f - tfm_exp2f(-1.4427f * sub / 0.05f);   /* ~150 ms per il 95% */
+    float fall_t = 0.15f + (float)p[TFM_P_FALL] * (0.6f / 127.f);
+    float fall_c = 1.f - tfm_exp2f(-1.4427f * sub / fall_t);
+    float fall_to = -(float)p[TFM_P_FALL] * (24.f / 127.f);
+
+    uint8_t eff[TFM_P_COUNT];       /* parametri con le modulazioni globali (LFO) */
+    uint8_t veff[TFM_P_COUNT];      /* e quelli di una voce (inviluppo di modulazione) */
+    float gl = 1.f, gr = 1.f;       /* tremolo */
 
     tfm_memset(output, 0, frames * 2 * sizeof(int32_t));
     for (unsigned start = 0; start < frames; start += TFM_SUB) {
         unsigned n = frames - start < TFM_SUB ? frames - start : TFM_SUB;
+        float dt = (float)n / (float)TFM_SAMPLE_RATE;
         int32_t *out = output + start * 2;
+        /* --- LFO, vibrato, tremolo (globali) --- */
+        mod_acc g = { {0}, {0}, 0, 0.f };
+        for (unsigned k = 0; k < TFM_LFOS; k++) {
+            const uint8_t *q = p + TFM_LFO_BASE(k);
+            int used = 0;
+            for (unsigned i = 0; i < TFM_LINKS; i++)
+                if (p[TFM_LFO_LINK(k, i)] && link_amt(p, TFM_LFO_LINK(k, i))) used = 1;
+            e->lfo_ph[k] += lfo_hz(q[0]) * dt;
+            if (e->lfo_ph[k] >= 1.f) { e->lfo_ph[k] -= (float)(int)e->lfo_ph[k]; e->lfo_hold[k] = rnd_bipolar(e); }
+            if (!used) continue;
+            float val = lfo_mode(q[2] % TFM_LFO_MODES, lfo_shape(q[1] % TFM_LFO_SHAPES, e->lfo_ph[k], e->lfo_hold[k]));
+            for (unsigned i = 0; i < TFM_LINKS; i++)
+                acc_add(&g, p[TFM_LFO_LINK(k, i)], link_amt(p, TFM_LFO_LINK(k, i)), val);
+        }
+        {   /* vibrato: profondita' non lineare, fino a 2 semitoni */
+            float vr = 0.5f * tfm_exp2f((float)p[TFM_P_VIB_RATE] * (4.6f / 127.f));
+            e->vib_ph += vr * dt;
+            if (e->vib_ph >= 1.f) { e->vib_ph -= (float)(int)e->vib_ph; e->vib_hold = rnd_bipolar(e); }
+            if (p[TFM_P_VIB_DEPTH]) {
+                static const uint8_t vshape[5] = { 5, 3, 1, 2, 4 };   /* SINE RECT SAW RAMP NOIZ */
+                float d = (float)p[TFM_P_VIB_DEPTH] * (1.f / 127.f);
+                float s = lfo_shape(vshape[p[TFM_P_VIB_WAVE] % 5], e->vib_ph, e->vib_hold);
+                unsigned vm = p[TFM_P_VIB_MODE] % 3;
+                if (vm == 1) s = 0.5f + 0.5f * s;
+                else if (vm == 2) s = -(0.5f + 0.5f * s);
+                g.pitch += d * d * 2.f * s;
+            }
+        }
+        if (p[TFM_P_TREM_DEPTH]) {   /* tremolo stereo con sfasamento L/R */
+            float tr = 0.5f * tfm_exp2f((float)p[TFM_P_TREM_RATE] * (4.6f / 127.f));
+            float d = (float)p[TFM_P_TREM_DEPTH] * (1.f / 127.f);
+            float off = (float)p[TFM_P_TREM_PHASE] * (0.5f / 127.f);
+            e->trem_ph += tr * dt;
+            if (e->trem_ph >= 1.f) e->trem_ph -= (float)(int)e->trem_ph;
+            gl = 1.f - d * (0.5f + 0.5f * sin_cyc(e->trem_ph));
+            gr = 1.f - d * (0.5f + 0.5f * sin_cyc(e->trem_ph + off));
+        } else {
+            gl = gr = 1.f;
+        }
+        tfm_memcpy(eff, p, TFM_P_COUNT);
+        acc_apply(&g, eff);
+
         for (unsigned vi = 0; vi < TFM_VOICES; vi++) {
             tfm_voice *v = &e->v[vi];
             if (v->note < 0) continue;
             if (!v->gate && voice_silent(v, algo, algo2)) { v->note = -1; continue; }
-            /* cutoff della voce: base + inviluppo + keytracking */
-            float lvl = fenv_step(&v->fenv, p, n);
-            float oct = cutoff_oct + env_oct * lvl + kt * ((float)v->note - 12.f) * (1.f / 12.f);
+            const uint8_t *pv = eff;
+            float pitch = g.pitch;
+            if (menv_on) {   /* inviluppo di modulazione della voce */
+                float m = adsr_step(&v->menv, p[TFM_P_MENV_A], p[TFM_P_MENV_D], p[TFM_P_MENV_S], p[TFM_P_MENV_R], n);
+                mod_acc mv = { {0}, {0}, 0, 0.f };
+                for (unsigned i = 0; i < TFM_LINKS; i++)
+                    acc_add(&mv, p[TFM_MENV_LINK(i)], link_amt(p, TFM_MENV_LINK(i)), m);
+                tfm_memcpy(veff, eff, TFM_P_COUNT);
+                acc_apply(&mv, veff);
+                pv = veff;
+                pitch += mv.pitch;
+            }
+            /* glide, rise, fall */
+            v->pitch_cur += ((float)v->note - v->pitch_cur) * gl_c;
+            v->rise_off -= v->rise_off * rise_c;
+            if (!v->gate && p[TFM_P_FALL]) v->fall_off += (fall_to - v->fall_off) * fall_c;
+            voice_setup_ops(v, 0, pv, v->pitch_cur + v->detune + bend + pitch + v->rise_off + v->fall_off);
+
+            /* filtro della voce: base + inviluppo + keytracking (con i parametri modulati) */
+            flt_ctl fc;
+            fc.ms20 = ms20;
+            float res = (float)pv[TFM_P_RES] * (1.f / 127.f);
+            fc.k = ms20 ? res * 5.6f : res * 4.05f;   /* MS20 va oltre l'autooscillazione */
+            float heat = (float)pv[TFM_P_HEAT] * (1.f / 127.f);
+            fc.drive = 0.35f + heat * heat * 6.f;
+            fc.makeup = 1.f / (fc.drive < 1.f ? 0.35f + 0.65f * fc.drive : 1.f + 0.25f * (fc.drive - 1.f));
+            fc.wobble = (float)pv[TFM_P_WOBBLE] * (2.f / 127.f);
+            fc.mix = mixc;
+            float lvl = adsr_step(&v->fenv, p[TFM_P_FLT_A], p[TFM_P_FLT_D], p[TFM_P_FLT_S], p[TFM_P_FLT_R], n);
+            float oct = (float)pv[TFM_P_CUTOFF] * (10.f / 127.f) + (float)pv[TFM_P_FLT_ENV] * (8.f / 127.f) * lvl
+                      + kt * ((float)v->note - 12.f) * (1.f / 12.f);
             float hz = 20.f * tfm_exp2f(oct);
             float fn = tfm_clampf(hz * (1.f / (float)TFM_SAMPLE_RATE), 0.0002f, 0.45f);
-            float g = tfm_prewarp(fn);
-            float G1 = g / (1.f + g);
+            float gg = tfm_prewarp(fn);
+            float G1 = gg / (1.f + gg);
             float G = v->g_prev > 0.f ? v->g_prev : G1;
             float dG = (G1 - G) / (float)n;
             v->g_prev = G1;
-            /* voci dispari a sinistra, pari a destra (come OUT1/OUT2), con spread */
-            float pl = (1.f - v->pan) * v->gain, pr = v->pan * v->gain;
+            unsigned fb1 = f_to(pv[TFM_P_FB1], 8), fb2 = f_to(pv[TFM_P_FB2], 8);
+            float vol = (float)pv[TFM_P_VOLUME] * (1.f / 127.f);
+            float master = vol * vol * 8388607.f * 0.28f;
+            /* voci dispari a sinistra, pari a destra (come OUT1/OUT2), con spread e tremolo */
+            float pl = (1.f - v->pan) * v->gain * gl, pr = v->pan * v->gain * gr;
             for (unsigned s = 0; s < n; s++) {
                 float x = (float)yac512(voice_fm(v, algo, fb1, algo2, fb2)) * (1.f / 4096.f);
                 float y = flt_process(&v->flt, &fc, G, x) * master;
@@ -714,6 +909,7 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
             }
         }
     }
+    p = eff;   /* gli effetti con le modulazioni dell'ultimo sotto-blocco */
     /* effetti, blocco della componente continua (~10 Hz) e limitatore morbido in Q23 */
     float buf[2 * TFM_SUB];
     for (unsigned start = 0; start < frames; start += TFM_SUB) {
