@@ -11,8 +11,31 @@
 #include "tfm_fx.h"
 #include "tfm_util.h"
 
-enum { BACK = 0x0000, PANEL = 0x18e3, TEXT = 0xef5d, ACCENT = 0x07ff, DIM = 0x738e, GREEN = 0x07e0, AMBER = 0xfd20 };
-static const uint16_t knob_color[4] = { 0x3c9f, 0x07bf, 0x4eae, 0x06d4 };
+/* temi: DARK (quello originale) e 70S (come il logo: crema, marrone, ruggine, arancio, senape) */
+typedef struct { uint16_t back, panel, text, accent, dim, green, amber, red, off, knob[4], stripe[4], led, led_off; } ui_theme;
+#define C565(r, g, b) (uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3))
+static const ui_theme themes[3] = {
+    { 0x0000, 0x18e3, 0xef5d, 0x07ff, 0x738e, 0x07e0, 0xfd20, 0xf800, 0x2104,
+      { 0x3c9f, 0x07bf, 0x4eae, 0x06d4 }, { 0, 0, 0, 0 }, 0, 0 },
+    { C565(246, 234, 206), C565(228, 210, 172), C565(70, 36, 20), C565(196, 98, 28), C565(150, 118, 86),
+      C565(96, 118, 30), C565(178, 70, 28), C565(176, 36, 24), C565(206, 188, 150),
+      { C565(96, 52, 28), C565(178, 70, 28), C565(214, 118, 32), C565(196, 146, 36) },
+      { C565(96, 52, 28), C565(184, 76, 32), C565(232, 136, 40), C565(236, 190, 70) }, 0, 0 },
+    /* TWIST: pannello nero e display a LED a matrice di punti, come i 4 caratteri della TWISTfm */
+    { C565(8, 8, 10), C565(28, 28, 32), C565(225, 225, 225), C565(255, 90, 40), C565(120, 120, 125),
+      C565(255, 150, 40), C565(255, 60, 30), C565(255, 30, 20), C565(40, 40, 44),
+      { C565(255, 60, 30), C565(255, 120, 40), C565(255, 170, 60), C565(255, 215, 120) }, { 0, 0, 0, 0 },
+      C565(255, 45, 25), C565(48, 10, 8) } };
+static const ui_theme *th = &themes[0];
+#define BACK (th->back)
+#define PANEL (th->panel)
+#define TEXT (th->text)
+#define ACCENT (th->accent)
+#define DIM (th->dim)
+#define GREEN (th->green)
+#define AMBER (th->amber)
+#define RED (th->red)
+#define knob_color (th->knob)
 
 static const uint8_t font[36][5] = {
     {0x3e,0x51,0x49,0x45,0x3e},{0,0x42,0x7f,0x40,0},{0x42,0x61,0x51,0x49,0x46},{0x21,0x41,0x45,0x4b,0x31},
@@ -65,7 +88,7 @@ static const char *const L_VMODE[3] = { "BIPO", "UP", "DOWN" };
 static const char *const L_GLMODE[2] = { "ALWS", "LEGT" };
 /* comandi che non sono parametri del preset */
 enum { V_STEP = 0x400, V_NOTE, V_GATE, V_CLEAR, V_SLOT, V_CH1, V_CH2, V_CH3, V_CH4,
-       V_INCH, V_OUTCH, V_NOTEOUT, V_THRU, V_SYNC, V_CLKOUT, V_DTIME };
+       V_INCH, V_OUTCH, V_NOTEOUT, V_THRU, V_SYNC, V_CLKOUT, V_DTIME, V_THEME };
 static const char *const L_BEND[25] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
                                         "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24" };
 static const char *const L_RANGE[6] = { "1", "2", "3", "4", "5", "6" };
@@ -86,7 +109,7 @@ static const pdesc P_FILTER[3][4] = {
     { {T_LIST, TFM_P_FLT_TYPE, "TYPE", L_FT, 15}, {T_F, TFM_P_CUTOFF, "CUTOFF", 0, 0}, {T_F, TFM_P_RES, "RES", 0, 0}, {T_F, TFM_P_FLT_ENV, "ENV", 0, 0} },
     { {T_F, TFM_P_HEAT, "HEAT", 0, 0}, {T_LIST, TFM_P_FLAVOUR, "FLAV", L_FLAV, 2}, {T_F, TFM_P_WOBBLE, "WOBBLE", 0, 0}, {T_LIST, TFM_P_KEYTRACK, "KTRACK", L_TEN, 11} },
     { {T_F, TFM_P_FLT_A, "ATK", 0, 0}, {T_F, TFM_P_FLT_D, "DEC", 0, 0}, {T_F, TFM_P_FLT_S, "SUS", 0, 0}, {T_F, TFM_P_FLT_R, "REL", 0, 0} } };
-static const pdesc P_GLO[10][4] = {
+static const pdesc P_GLO[11][4] = {
     { {T_LIST, TFM_P_VOICE_MODE, "MODE", L_MODE, TFM_VOICE_MODES}, {T_VOICES, TFM_P_VOICES, "VOICES", L_VOICES, 8}, {T_LIST, TFM_P_PRIO, "PRIO", L_PRIO, 3}, {T_F, TFM_P_FAT, "FAT", 0, 0} },
     { {T_F, TFM_P_FB1, "FB 1", 0, 0}, {T_LIST, TFM_P_ALGO2, "LAYER2", L_L2, 2}, {T_F, TFM_P_FB2, "FB 5", 0, 0}, {T_TUNE, TFM_P_L2_TUNE, "L2TUNE", 0, 49} },
     { {T_F, TFM_P_VOLUME, "VOLUME", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} },
@@ -98,9 +121,10 @@ static const pdesc P_GLO[10][4] = {
     { {T_LIST, TFM_P_SCALE, "SCALE", tfm_scale_names, TFM_SCALES}, {T_LIST, TFM_P_ROOT, "ROOT", L_ROOT, 12},
       {T_LIST, TFM_P_CHORD, "CHORD", tfm_chord_names, TFM_CHORDS}, {T_NONE, 0, "", 0, 0} },
     { {T_STEP, V_INCH, "IN CH", 0, 0}, {T_STEP, V_OUTCH, "OUT CH", 0, 0}, {T_STEP, V_NOTEOUT, "NOTE OUT", 0, 0}, {T_STEP, V_THRU, "THRU", 0, 0} },
-    { {T_STEP, V_SYNC, "CLOCK", 0, 0}, {T_STEP, V_CLKOUT, "CLK OUT", 0, 0}, {T_BPM, TFM_P_BPM, "BPM", 0, 0}, {T_NONE, 0, "", 0, 0} } };
-#define GLO_PAGES 10
-enum { GP_PORTA = 5, GP_RISE, GP_SCALE, GP_MIDI, GP_SYNC };
+    { {T_STEP, V_SYNC, "CLOCK", 0, 0}, {T_STEP, V_CLKOUT, "CLK OUT", 0, 0}, {T_BPM, TFM_P_BPM, "BPM", 0, 0}, {T_NONE, 0, "", 0, 0} },
+    { {T_STEP, V_THEME, "THEME", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0}, {T_NONE, 0, "", 0, 0} } };
+#define GLO_PAGES 11
+enum { GP_PORTA = 5, GP_RISE, GP_SCALE, GP_MIDI, GP_SYNC, GP_DISPLAY };
 static const pdesc P_FX[7][4] = {
     { {T_LIST, TFM_P_DIST_TYPE, "TYPE", L_DIST, TFM_DIST_SHAPES}, {T_F, TFM_P_DIST_DRIVE, "DRIVE", 0, 0}, {T_F, TFM_P_DIST_TEMP, "TEMP", 0, 0}, {T_F, TFM_P_DIST_MIX, "MIX", 0, 0} },
     { {T_F, TFM_P_PH_RATE, "RATE", 0, 0}, {T_F, TFM_P_PH_DEPTH, "DEPTH", 0, 0}, {T_F, TFM_P_PH_FB, "FDBK", 0, 0}, {T_F, TFM_P_PH_MIX, "MIX", 0, 0} },
@@ -190,7 +214,8 @@ void tfm_ui_settings_load(tfm_ui *u, const tfm_settings *s)
     u->set = *s;
     if (u->set.in_ch > 16) u->set.in_ch = 0;
     if (u->set.out_ch > 15) u->set.out_ch = 0;
-    u->set.note_out &= 1; u->set.thru &= 1; u->set.sync &= 1; u->set.clk_out &= 1;
+    u->set.note_out &= 1; u->set.thru &= 1; u->set.sync &= 1; u->set.clk_out &= 1; if (u->set.theme > 2) u->set.theme = 0;
+    tfm_memset(u->band_hash, 0xff, sizeof u->band_hash);
     u->dirty = 1;
 }
 int tfm_ui_playing(const tfm_ui *u) { return u->playing; }
@@ -413,6 +438,12 @@ static void turn_virtual(tfm_ui *u, unsigned id, int delta)
     case V_THRU: u->set.thru = delta > 0; push(u, TFM_EV_SETTINGS, 0, 0); break;
     case V_SYNC: u->set.sync = delta > 0; push(u, TFM_EV_SETTINGS, 0, 0); break;
     case V_CLKOUT: u->set.clk_out = delta > 0; push(u, TFM_EV_SETTINGS, 0, 0); break;
+    case V_THEME: {
+        int t = (int)u->set.theme + (delta > 0 ? 1 : -1);
+        t = t < 0 ? 0 : t > 2 ? 2 : t;
+        if (t != u->set.theme) { u->set.theme = (uint8_t)t; tfm_memset(u->band_hash, 0xff, sizeof u->band_hash); push(u, TFM_EV_SETTINGS, 0, 0); }
+        break;
+    }
     case V_DTIME:   /* eco: millisecondi, oppure divisione se SYNC e' acceso */
         if (u->patch.p[TFM_P_DLY_SYNC]) {
             int d = (int)(u->patch.p[TFM_P_DLY_DIV] % TFM_DLY_DIVS) + (delta > 0 ? 1 : -1);
@@ -485,6 +516,7 @@ static void value_text(const tfm_ui *u, const pdesc *d, char *out)
         case V_THRU: tfm_strcpy(out, u->set.thru ? "ON" : "OFF"); break;
         case V_SYNC: tfm_strcpy(out, u->set.sync ? "EXT" : "INT"); break;
         case V_CLKOUT: tfm_strcpy(out, u->set.clk_out ? "ON" : "OFF"); break;
+        case V_THEME: { static const char *const tn[3] = { "DARK", "70S", "TWST" }; tfm_strcpy(out, tn[u->set.theme % 3]); } break;
         case V_DTIME:
             if (u->patch.p[TFM_P_DLY_SYNC]) tfm_strcpy(out, tfm_dly_div_names[u->patch.p[TFM_P_DLY_DIV] % TFM_DLY_DIVS]);
             else { float ms = 30.f; for (unsigned k = 0; k < u->patch.p[TFM_P_DLY_TIME]; k++) ms *= 1.02511f; num_text(out, (unsigned)(ms + 0.5f)); }
@@ -815,10 +847,37 @@ static float wave_shape(unsigned w, float t)
 /* Pagine                                                              */
 /* ------------------------------------------------------------------ */
 
+/* display a LED a matrice di punti: 4 caratteri 5x7, punti di 3 pixel */
+static void led_text(tfm_ui *u, int x, int y, const char *s)
+{
+    if (y >= (int)u->band_top + 16 || y + 28 <= (int)u->band_top) return;
+    for (int i = 0; i < 4; i++) {
+        const uint8_t *g = glyph(*s ? *s : ' ');
+        for (int col = 0; col < 5; col++)
+            for (int row = 0; row < 7; row++)
+                fill(u, x + i * 24 + col * 4, y + row * 4, 3, 3, (g[col] >> row) & 1u ? th->led : th->led_off);
+        if (*s) s++;
+    }
+}
+static void value_text(const tfm_ui *u, const pdesc *d, char *out);
+static const pdesc *page_params(const tfm_ui *u);
 static void header(tfm_ui *u, const char *title, const char *right)
 {
+    if (th->led) {   /* TWIST: a sinistra il display a 4 caratteri, come sulla TWISTfm */
+        fill(u, 0, 0, 240, 32, BACK);
+        fill(u, 2, 0, 100, 31, C565(20, 4, 4));
+        char v[12];
+        const pdesc *ps = page_params(u);
+        if (u->touched >= 0 && ps) value_text(u, &ps[u->touched], v);   /* il valore della manopola girata */
+        else { int k = 0; while (title[k] && k < 4) { v[k] = title[k]; k++; } v[k] = 0; }
+        led_text(u, 6, 2, v);
+        text(u, 110, 6, title, 1, TEXT);
+        if (right) text(u, 110, 20, right, 1, ACCENT);
+        return;
+    }
     fill(u, 0, 0, 240, 28, PANEL);
-    text(u, 6, 7, title, 2, AMBER);
+    if (th->stripe[0]) for (int k = 0; k < 4; k++) fill(u, 0, 24 + k, 240, 1, th->stripe[k]);   /* 70S: le 4 strisce */
+    text(u, 6, 5, title, 2, AMBER);
     if (right) text(u, 234 - text_w(right, 1), 11, right, 1, ACCENT);
 }
 static void footer(tfm_ui *u, const pdesc *ps)
@@ -933,7 +992,7 @@ static void draw_home(tfm_ui *u)
         num_text(cs + 4, u->cpu);
         unsigned l = (unsigned)tfm_strlen(cs);
         cs[l] = '%'; cs[l + 1] = 0;
-        text(u, 234 - text_w(cs, 1), 164, cs, 1, u->cpu > 85 ? 0xf800 : u->cpu > 65 ? AMBER : DIM);
+        text(u, 234 - text_w(cs, 1), 164, cs, 1, u->cpu > 85 ? RED : u->cpu > 65 ? AMBER : DIM);
     }
     {
         uint8_t sl[4];
@@ -1341,10 +1400,21 @@ static void draw_midi(tfm_ui *u, unsigned pg)
 static void draw_glo(tfm_ui *u)
 {
     static const char *const sub[GLO_PAGES] = { "1 VOICES", "2 LAYER", "3 LEVEL", "4 VIBRATO", "5 TREMOLO", "6 PORTAMENTO",
-                                                "7 RISE/FALL", "8 SCALE", "9 MIDI", "10 SYNC" };
+                                                "7 RISE/FALL", "8 SCALE", "9 MIDI", "10 SYNC", "11 DISPLAY" };
     header(u, "GLOBAL", sub[u->page[S_GLO]]);
     if (u->page[S_GLO] == GP_SCALE) { draw_scale(u); page_dots(u, GLO_PAGES, GP_SCALE); footer(u, P_GLO[GP_SCALE]); return; }
     if (u->page[S_GLO] == GP_MIDI || u->page[S_GLO] == GP_SYNC) { draw_midi(u, u->page[S_GLO]); return; }
+    if (u->page[S_GLO] == GP_DISPLAY) {   /* tema dello schermo */
+        text(u, 6, 38, "THEME", 2, AMBER);
+        { static const char *const td[3] = { "DARK: BLACK, BEST ON STAGE", "70S: CREAM, BROWN, RUST, MUSTARD", "TWIST: LED DISPLAY LIKE THE TWISTFM" };
+          text(u, 6, 60, td[u->set.theme % 3], 1, TEXT); }
+        for (int k = 0; k < 4; k++) fill(u, 6 + k * 57, 84, 52, 40, knob_color[k]);
+        if (th->stripe[0]) for (int k = 0; k < 4; k++) fill(u, 6, 134 + k * 6, 228, 4, th->stripe[k]);
+        text(u, 6, 166, "SAVED ON THE FM-1, NOT IN PRESETS", 1, DIM);
+        page_dots(u, GLO_PAGES, GP_DISPLAY);
+        footer(u, P_GLO[GP_DISPLAY]);
+        return;
+    }
     if (u->page[S_GLO] >= 3) { draw_glo_mod(u, u->page[S_GLO]); return; }
     const uint8_t *p = u->patch.p;
     unsigned m = mode_cur(u);
@@ -1608,7 +1678,7 @@ static void draw_seq(tfm_ui *u)
     header(u, "SEQ", sub[pg]);
     char s[16];
     text(u, 6, 36, u->playing ? "PLAY" : "STOP", 2, u->playing ? GREEN : DIM);
-    if (u->rec) text(u, 66, 36, "REC", 2, 0xf800);
+    if (u->rec) text(u, 66, 36, "REC", 2, RED);
     num_text(s, (u->playing ? u->play_step : u->cursor) + 1u);
     unsigned l = (unsigned)tfm_strlen(s);
     s[l++] = '/';
@@ -1674,15 +1744,15 @@ static void draw_scale(tfm_ui *u)
         unsigned n = white[w];
         int in = (m >> ((n - root + 12) % 12)) & 1;
         fill(u, kx + (int)w * kw, ky, kw - 2, kh, in ? (n == root ? AMBER : TEXT) : DIM);
-        if (cht[n] && ch) fill(u, kx + (int)w * kw + 9, ky + kh - 16, 11, 8, 0xf800);
+        if (cht[n] && ch) fill(u, kx + (int)w * kw + 9, ky + kh - 16, 11, 8, RED);
     }
     for (unsigned n = 0; n < 12; n++) {
         if (bpos[n] < 0) continue;
         int in = (m >> ((n - root + 12) % 12)) & 1;
         int x = kx + (bpos[n] + 1) * kw - 10;
         fill(u, x - 1, ky, 20, 56, BACK);
-        fill(u, x, ky, 18, 54, in ? (n == root ? AMBER : knob_color[0]) : 0x2104);
-        if (cht[n] && ch) fill(u, x + 4, ky + 40, 10, 8, 0xf800);
+        fill(u, x, ky, 18, 54, in ? (n == root ? AMBER : knob_color[0]) : th->off);
+        if (cht[n] && ch) fill(u, x + 4, ky + 40, 10, 8, RED);
     }
     char s[24];
     tfm_strcpy(s, L_ROOT[root]);
@@ -1690,7 +1760,7 @@ static void draw_scale(tfm_ui *u)
     s[l++] = ' ';
     tfm_strcpy(s + l, tfm_scale_names[sc]);
     int x = text(u, 6, 142, s, 2, TEXT);
-    if (ch) { x = text(u, x + 12, 142, tfm_chord_names[ch], 2, 0xf800); }
+    if (ch) { x = text(u, x + 12, 142, tfm_chord_names[ch], 2, RED); }
     text(u, 6, 166, sc ? "KEYS FOLLOW THE SCALE" : "CHROMATIC: NO CORRECTION", 1, DIM);
 }
 
@@ -1729,6 +1799,7 @@ static void scene(tfm_ui *u)
 uint32_t tfm_ui_draw(tfm_ui *u)
 {
     if (!u->dirty) return 0;
+    th = &themes[u->set.theme < 3 ? u->set.theme : 0];
     u->dirty = 0;
     int y0 = -1, y1 = -1;
     for (unsigned b = 0; b < TFM_SCREEN_H / 16; b++) {

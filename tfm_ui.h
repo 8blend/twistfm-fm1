@@ -32,7 +32,7 @@ typedef struct {
     uint8_t thru;       /* MIDI in -> USB out */
     uint8_t sync;       /* 0 clock interno, 1 esterno (MIDI clock, START/STOP) */
     uint8_t clk_out;    /* clock e START/STOP verso USB */
-    uint8_t pad;
+    uint8_t theme;      /* 0 DARK, 1 70S */
 } tfm_settings;
 typedef struct { uint8_t type, a, b; } tfm_event;
 
