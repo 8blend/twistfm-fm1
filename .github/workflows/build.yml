@@ -23,11 +23,12 @@ jobs:
           if [ ! -f app/fm1.toml ]; then
             mkdir -p app/src app/site docs/img
             cp fm1.toml app.c app.h app/
-            cp words.tsv app/ 2>/dev/null || printf 'TWISTFM\ttwist f m\n' > app/words.tsv
             cp landing.md app/site/
             cp tfm_*.c tfm_*.h app/src/
             cp screen-home.png docs/img/
           fi
+          # parole per il lettore di schermo: sempre con l'indirizzo dove vengono pubblicate
+          printf '# url: https://8blend.github.io/twistfm-fm1/words/\nTWISTFM\ttwist f m\nHOME\thome\nEDIT\tedit\nFILTRO\tfilter\nGLOBAL\tglobal\n' > app/words.tsv
           find app docs -type f | sort
 
       - name: Scarica fm1-base (piattaforma) e felucca-bsp (hardware)
