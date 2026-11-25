@@ -56,9 +56,25 @@ jobs:
           python3 fm1-base/tools/build.py app --release "$VERSION" 2>&1 | tee build-log.txt
           ls -la app/build
 
+      - name: Emscripten (per il simulatore nel browser del sito)
+        uses: mymindstorm/setup-emsdk@v14
+        continue-on-error: true
+
+      - name: Simulatore per il browser
+        shell: bash
+        continue-on-error: true
+        run: |
+          python3 fm1-base/tools/build.py app --web 2>&1 | tee web-log.txt
+
       - name: Crea il sito con l'installer web
         shell: bash
         run: |
+          if [ ! -f app/build/emu/app.wasm ]; then
+            # senza simulatore: il sito si crea lo stesso, l'installer funziona
+            mkdir -p app/build/emu
+            : > app/build/emu/app.wasm
+            echo "<p>Simulatore non disponibile in questa versione.</p>" > app/build/emu/index.html
+          fi
           python3 fm1-base/tools/make_site.py app "app/build/twistfm-$VERSION.fwsc" "$VERSION" site
           ls -la site site/install
 
@@ -68,6 +84,7 @@ jobs:
           mkdir -p out
           cp app/build/*.fwsc out/ 2>/dev/null || true
           cp build-log.txt out/ 2>/dev/null || true
+          cp web-log.txt out/ 2>/dev/null || true
           cp app/build/firmware.json out/ 2>/dev/null || true
 
       - name: Firmware da scaricare
