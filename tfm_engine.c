@@ -485,7 +485,7 @@ tfm_engine *tfm_engine_init(void *memory)
         for (unsigned k = 0; k < TFM_OPS; k++) e->v[i].op[k].env = EG_MAX;
     }
     e->mono_note = -1;
-    e->rnd = 0x12345u;
+    e->rnd = 2463534242u;   /* seme del generatore casuale */
     tfm_fx_init(&e->fx);
     tfm_patch_init(&e->patch);
     return e;
