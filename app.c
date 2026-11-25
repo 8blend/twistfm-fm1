@@ -20,7 +20,7 @@ static tfm_ui *U;
 static uint8_t mem_ok;
 
 /* ------------------------------------------------- coda eventi UI -> audio --- */
-enum { Q_NOTE_ON = 1, Q_NOTE_OFF, Q_PARAM, Q_ALL_OFF, Q_STEP, Q_SEQ, Q_PLAY };
+enum { Q_NOTE_ON = 1, Q_NOTE_OFF, Q_PARAM, Q_ALL_OFF, Q_STEP, Q_SEQ, Q_PLAY, Q_SHED };
 #define QN 512u
 static volatile uint32_t q_buf[QN];
 static volatile uint32_t q_head, q_tail;       /* head: scrive la UI; tail: legge l'audio */
@@ -109,6 +109,7 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         }
         else if (type == Q_SEQ) tfm_load_seq(E, tfm_ui_seq(U));
         else if (type == Q_PLAY) tfm_transport(E, (int)a);
+        else if (type == Q_SHED) tfm_shed_voice(E);
         q_tail = (t + 1u) & (QN - 1u);
     }
     tfm_set_sync(E, tfm_ui_settings(U)->sync);
@@ -176,6 +177,16 @@ void app_say(const char *a, const char *b)     /* messaggi della piattaforma (ri
     for (i = 0; i < 23u && b && b[i]; i++) say_b[i] = b[i];
     say_b[i] = 0;
     say_until = plat_ms() + 1500u;
+}
+
+void app_splash(void)                          /* il logo retro, a bande; prima di app_init: ui_mem e' libera */
+{
+    uint16_t *band[2] = { (uint16_t *)ui_mem, (uint16_t *)ui_mem + 240u * 16u };
+    uint32_t b;
+    for (b = 0; b < 15u; b++) {
+        tfm_logo_band(band[b & 1u], b * 16u);   /* si disegna in una banda mentre il DMA invia l'altra */
+        lcd_blit(0, b * 16u, 240, 16, band[b & 1u]);
+    }
 }
 
 static void say_draw(void)
@@ -280,6 +291,8 @@ static void input(void)
     tfm_ui_set_play_state(U, tfm_play_state(E));   /* passo del sequencer per lo schermo */
     tfm_ui_set_bpm(U, tfm_bpm_now(E));
     tfm_ui_set_cpu(U, plat_cpu_pct() ? plat_cpu_pct() : 1u);
+    if (plat_cpu_pct() > 90u)                  /* CPU al limite: si spegne in fretta una coda di nota, prima che gracchi */
+        q_push(Q_SHED, 0, 0);
     if (set_due && (int32_t)(plat_ms() - set_due) >= 0) {   /* impostazioni MIDI in flash, a bocce ferme */
         set_due = 0;
         plat_store_save(OBJ_SETTINGS, tfm_ui_settings(U), sizeof(tfm_settings));

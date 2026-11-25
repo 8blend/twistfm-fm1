@@ -547,8 +547,7 @@ void tfm_ui_encoder(tfm_ui *u, unsigned enc, int delta)
     }
     if (enc == TFM_ENC_SELECT) {
         /* SELECT sfoglia le pagine; in ENV, che ha una pagina, sceglie l'operatore */
-        if (u->section == S_ENV) u->op = (uint8_t)((u->op + (delta > 0 ? 1 : 5)) % 6);
-        else if (u->section == S_SAVE) u->save_slot = (uint8_t)((u->save_slot + (delta > 0 ? 1 : TFM_USER_SLOTS - 1)) % TFM_USER_SLOTS);
+        if (u->section == S_SAVE) u->save_slot = (uint8_t)((u->save_slot + (delta > 0 ? 1 : TFM_USER_SLOTS - 1)) % TFM_USER_SLOTS);
         else if (page_count[u->section] > 1) {
             unsigned n = page_count[u->section];
             u->page[u->section] = (uint8_t)((u->page[u->section] + (delta > 0 ? 1 : n - 1)) % n);
@@ -576,9 +575,21 @@ void tfm_ui_button(tfm_ui *u, unsigned b, int down)
     case TFM_BTN_OCT_DOWN: if (u->octave > -3) u->octave--; u->dirty = 1; break;
     case TFM_BTN_OCT_UP: if (u->octave < 3) u->octave++; u->dirty = 1; break;
     case TFM_BTN_HOME: goto_section(u, S_HOME, 0); break;
-    case TFM_BTN_EDIT: goto_section(u, S_EDIT, 0); break;
-    case TFM_BTN_ENV: goto_section(u, S_ENV, 0); break;
-    case TFM_BTN_FX: goto_section(u, S_FX, 0); break;
+    case TFM_BTN_EDIT:   /* EDIT ed ENV: premuti di nuovo passano all'operatore successivo (le pagine con SELECT) */
+    case TFM_BTN_ENV: {
+        unsigned s = b == TFM_BTN_EDIT ? S_EDIT : S_ENV;
+        if (u->section == s) u->op = (uint8_t)((u->op + 1) % 6);
+        u->section = (uint8_t)s;
+        u->touched = -1;
+        u->dirty = 1;
+        break;
+    }
+    case TFM_BTN_FX: {   /* DIST > PHASER > TAPE > REVERB > CHAIN; le seconde pagine (TAPE+, REVERB+) solo con SELECT */
+        static const uint8_t next_main[7] = { 1, 2, 4, 4, 6, 6, 0 };
+        if (u->section == S_FX) u->page[S_FX] = next_main[u->page[S_FX] % 7];
+        u->section = S_FX; u->touched = -1; u->dirty = 1;
+        break;
+    }
     case TFM_BTN_SEL: goto_section(u, S_FILTER, 0); break;
     case TFM_BTN_GLO: goto_section(u, S_GLO, 0); break;
     case TFM_BTN_LFO: /* LFO 1 > LFO 2 > LFO 3 > MOD ENV; le pagine di chain con SELECT */
@@ -975,7 +986,7 @@ static void draw_edit(tfm_ui *u)
     }
     text(u, 6, 140, "PAGE", 1, DIM);
     text(u, 30, 140, u->page[S_EDIT] ? "2 SCALE" : "1 BASIC", 1, TEXT);
-    text(u, 6, 164, "BLACK KEYS = OPERATOR", 1, DIM);
+    text(u, 6, 164, "EDIT = NEXT OP  SELECT = PAGE", 1, DIM);
     page_dots(u, 2, u->page[S_EDIT]);
     footer(u, P_EDIT[u->page[S_EDIT]]);
 }
@@ -1003,7 +1014,7 @@ static void draw_env(tfm_ui *u)
     draw_op_strip(u, 34);
     const uint8_t *q = u->patch.p + TFM_OP_BASE(u->op);
     draw_adsr(u, 6, 80, 228, 92, q[TFM_OPP_A], q[TFM_OPP_D], q[TFM_OPP_S], q[TFM_OPP_R], knob_color[3]);
-    text(u, 10, 178, "SELECT/BLACK KEYS = OP", 1, DIM);
+    text(u, 10, 178, "ENV = NEXT OP (OR BLACK KEYS)", 1, DIM);
     footer(u, P_ENV);
 }
 
@@ -1481,7 +1492,7 @@ static void draw_fx(tfm_ui *u)
         }
         text(u, bx + 6, by + 6, L_REV_LONG[t], 2, TEXT);
     }
-    text(u, 6, 164, "SELECT = PAGE", 1, DIM);
+    text(u, 6, 164, "FX = NEXT EFFECT  SELECT = PAGE", 1, DIM);
     page_dots(u, 7, pg);
     footer(u, P_FX[pg]);
 }
@@ -1735,4 +1746,93 @@ uint32_t tfm_ui_draw(tfm_ui *u)
     }
     if (y0 < 0) return 0;
     return 0u | ((uint32_t)y0 << 8) | (239u << 16) | ((uint32_t)(y1 - y0 - 1) << 24);
+}
+
+/* ------------------------------------------------------------------ */
+/* Logo retro (schermata di avvio): sole a strisce, griglia, scritta   */
+/* cromata in corsivo. Disegnato a bande di 16 righe, senza tfm_ui.    */
+/* ------------------------------------------------------------------ */
+static uint16_t rgb565(int r, int g, int b)
+{
+    r = r < 0 ? 0 : r > 255 ? 255 : r; g = g < 0 ? 0 : g > 255 ? 255 : g; b = b < 0 ? 0 : b > 255 ? 255 : b;
+    return (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+}
+static int lerp(int a, int b, int t, int n) { return a + (b - a) * t / n; }
+/* la scritta: 5x7 a scala 4, inclinata; 0 fuori, 1 contorno, 2 lettera */
+#define LOGO_S 4
+#define LOGO_X0 34
+#define LOGO_Y0 92
+static int logo_text_at(int x, int y)
+{
+    static const char word[] = "TWISTER";
+    int best = 0;
+    for (int dy = -2; dy <= 2; dy++)
+        for (int dx = -2; dx <= 2; dx++) {
+            int yy = y + dy - LOGO_Y0;
+            if (yy < 0 || yy >= 7 * LOGO_S) continue;
+            int xx = x + dx - LOGO_X0 + (7 * LOGO_S - yy) / 3;   /* corsivo */
+            if (xx < 0) continue;
+            int ch = xx / (6 * LOGO_S), col = (xx % (6 * LOGO_S)) / LOGO_S, row = yy / LOGO_S;
+            if (ch >= 7 || col >= 5) continue;
+            if (glyph(word[ch])[col] & (1u << row)) {
+                if (!dx && !dy) return 2;
+                best = 1;
+            }
+        }
+    return best;
+}
+void tfm_logo_band(uint16_t *px, unsigned y0)
+{
+    const int hz = 150, cx = 120, cy = 128, rad = 64;
+    for (int r = 0; r < 16; r++) {
+        int y = (int)y0 + r;
+        for (int x = 0; x < 240; x++) {
+            uint16_t c;
+            if (y < hz) {   /* cielo: blu notte che scalda verso l'orizzonte */
+                c = rgb565(lerp(8, 70, y, hz), lerp(4, 10, y, hz), lerp(30, 90, y, hz));
+                { unsigned h = (unsigned)(x * 73856093) ^ (unsigned)(y * 19349663); h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+                  if ((h & 1023u) < 4u && y < 100) c = rgb565(210, 210, 255); }   /* stelle */
+                int dx = x - cx, dy = y - cy;
+                if (dx * dx + dy * dy <= rad * rad) {   /* sole: dal giallo al magenta, a strisce sotto */
+                    int t = y - (cy - rad);
+                    int band = (y - (cy - 10)) ;
+                    int gap = band > 0 && (band % 9) < 1 + band / 9;
+                    if (!gap) c = rgb565(255, lerp(230, 40, t, 2 * rad), lerp(60, 160, t, 2 * rad));
+                }
+            } else {        /* terra: viola scuro con la griglia in prospettiva */
+                int d = y - hz + 1;
+                c = rgb565(20, 0, 40);
+                int line = 0;
+                for (int k = 1; k < 12; k++) { int yy = hz + k * k * 2 / 3; if (y == yy) line = 1; }
+                for (int k = -12; k <= 12; k++) {   /* linee verso il punto di fuga */
+                    int lx = cx + k * 20 * d / 16;
+                    if (x == lx || (k && x == lx + (k > 0 ? -1 : 1) && d > 40)) line = 1;
+                }
+                if (line) c = rgb565(255, 40, lerp(200, 140, d, 90));
+            }
+            int t = logo_text_at(x, y);
+            if (t == 1) c = rgb565(10, 0, 30);
+            else if (t == 2) {   /* cromato: bianco in alto, azzurro, linea d'orizzonte, blu scuro in basso */
+                int yy = y - LOGO_Y0;
+                if (yy < 11) c = rgb565(255, 255, lerp(255, 210, yy, 11));
+                else if (yy < 14) c = rgb565(120, 220, 255);
+                else if (yy < 15) c = rgb565(255, 255, 255);
+                else c = rgb565(lerp(40, 160, yy - 15, 13), lerp(60, 30, yy - 15, 13), lerp(160, 220, yy - 15, 13));
+            }
+            px[r * 240 + x] = PXC(c);
+        }
+    }
+    if (y0 + 16 > 200 && y0 < 216) {   /* sottotitolo */
+        static const char sub[] = "FM SYNTHESIZER";
+        int w = 14 * 6 * 1, sx = (240 - w) / 2;
+        for (int i = 0; sub[i]; i++) {
+            const uint8_t *g = glyph(sub[i]);
+            for (int col = 0; col < 5; col++)
+                for (int row = 0; row < 7; row++)
+                    if (g[col] & (1u << row)) {
+                        int yy = 204 + row - (int)y0;
+                        if (yy >= 0 && yy < 16) px[yy * 240 + sx + i * 6 + col] = PXC(rgb565(80, 230, 255));
+                    }
+        }
+    }
 }

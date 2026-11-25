@@ -54,6 +54,8 @@ const tfm_patch *tfm_ui_patch(const tfm_ui *u);
 uint32_t tfm_ui_draw(tfm_ui *u);
 #ifndef TFM_UI_NO_FRAMEBUFFER
 const uint16_t *tfm_ui_framebuffer(const tfm_ui *u);
+/* logo retro: una banda di 16 righe (240 x 16 pixel) dalla riga y0, anche senza tfm_ui */
+void tfm_logo_band(uint16_t *px, unsigned y0);
 #endif
 /* LED: bit 0..13 tasti funzione, 14..40 tasti musicali. */
 uint64_t tfm_ui_leds(const tfm_ui *u);
@@ -71,4 +73,6 @@ unsigned tfm_ui_user_blob(const tfm_ui *u, unsigned slot, uint8_t *buf, unsigned
 int tfm_ui_user_load(tfm_ui *u, unsigned slot, const uint8_t *buf, unsigned len);       /* 0 = ok */
 #define TFM_USER_BLOB_MAX 640u
 const char *tfm_ui_preset_name(unsigned index);
+/* logo retro: una banda di 16 righe (240 x 16 pixel) dalla riga y0, anche senza tfm_ui */
+void tfm_logo_band(uint16_t *px, unsigned y0);
 #endif

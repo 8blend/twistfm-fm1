@@ -245,6 +245,7 @@ typedef struct {
     tfm_adsr menv;    /* inviluppo di modulazione */
     float pitch_cur;  /* nota che suona ora (glide), in semitoni */
     float rise_off, fall_off;   /* scostamenti di pitch di Rise e Fall */
+    uint8_t shed;               /* spenta in fretta per alleggerire la CPU */
     float setup_pitch;          /* pitch e versione dei parametri dell'ultimo voice_setup_ops */
     uint32_t setup_ver;
 } tfm_voice;
@@ -338,6 +339,7 @@ static void voice_setup_ops(tfm_voice *v, int retrigger, const uint8_t *p, float
         o->ar = (uint8_t)(ar ? (ar * 4 + ks > 63 ? 63 : ar * 4 + ks) : 0);
         o->dr = (uint8_t)(dr ? (dr * 4 + ks > 63 ? 63 : dr * 4 + ks) : 0);
         o->rr = (uint8_t)(rr ? (rr * 4 + ks > 63 ? 63 : rr * 4 + ks) : 0);
+        if (v->shed) o->rr = 60;
         unsigned sl = 15 - f_to(q[TFM_OPP_S], 16);
         o->sl = (sl == 15 ? 0x1f0u : sl << 4) << 16;
         /* attenuazione: TL + KSL + velocity */
@@ -450,7 +452,8 @@ static int voice_silent(const tfm_voice *v, unsigned algo, unsigned algo2)
     unsigned mask = carriers[algo] | (algo2 ? 0x30u : 0x20u);
     for (unsigned i = 0; i < TFM_OPS; i++)
         if ((mask >> i) & 1u)
-            if (v->op[i].stage != EG_OFF && v->op[i].att < 500) return 0;
+            if (v->op[i].stage != EG_OFF && !v->op[i].silent
+                && (v->op[i].stage == EG_ATTACK || (v->op[i].env >> 16) + v->op[i].att < 400)) return 0;   /* sotto ~-75 dB la voce e' finita */
     return 1;
 }
 
@@ -554,6 +557,22 @@ void tfm_set_param(tfm_engine *e, unsigned id, uint8_t value)
 }
 uint8_t tfm_get_param(const tfm_engine *e, unsigned id) { return id < TFM_P_COUNT ? e->patch.p[id] : 0; }
 void tfm_pitch_bend(tfm_engine *e, int q16) { e->bend_q16 = q16; }
+/* CPU al limite: la voce rilasciata piu' vecchia si spegne in pochi millisecondi */
+void tfm_shed_voice(tfm_engine *e)
+{
+    int best = -1;
+    uint32_t oldest = UINT32_MAX;
+    for (unsigned i = 0; i < TFM_VOICES; i++) {
+        tfm_voice *v = &e->v[i];
+        if (v->note >= 0 && !v->gate && v->age < oldest) { oldest = v->age; best = (int)i; }
+    }
+    if (best < 0) return;
+    e->v[best].shed = 1;
+    for (unsigned k = 0; k < TFM_OPS; k++) {
+        tfm_op *o = &e->v[best].op[k];
+        if (o->stage != EG_OFF) { o->stage = EG_RELEASE; o->rr = 60; }
+    }
+}
 void tfm_set_sync(tfm_engine *e, int ext) { e->ext_sync = ext ? 1 : 0; }
 void tfm_midi_clock(tfm_engine *e)
 {
@@ -602,6 +621,7 @@ static void start_voice(tfm_engine *e, tfm_voice *v, uint8_t note, uint8_t vel, 
     v->fenv.level = 0.f;
     v->menv.stage = 1;
     v->menv.level = 0.f;
+    v->shed = 0;
     /* glide: parte dall'ultima nota suonata */
     v->pitch_cur = glide ? e->last_pitch : (float)note;
     v->rise_off = -(float)p[TFM_P_RISE] * (12.f / 127.f);

@@ -7,6 +7,7 @@
 
 #define APP_NAME "TWISTER"
 #define APP_SPLASH_RGB RGB(253, 160, 0)
+#define APP_SPLASH                       /* schermata di avvio nostra: il logo retro (app_splash) */
 #define APP_BLOCK 256u                   /* frame per blocco audio: 5.8 ms a 44.1 kHz */
 #define APP_TOUCH                        /* velocity dai tasti (lib/touch.h) */
 #define APP_CANVAS_PX (240u * 40u)       /* lo schermo lo disegniamo noi a bande: alla piattaforma basta poco */
@@ -26,3 +27,4 @@ void app_ui_init(void);
 void app_frame(void);
 void app_input_only(void);
 void app_say(const char *a, const char *b);
+void app_splash(void);
