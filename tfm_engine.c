@@ -1386,7 +1386,7 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
             float y = x - e->dc_x[ch] + 0.99857f * e->dc_y[ch];
             e->dc_x[ch] = x;
             e->dc_y[ch] = y;
-            o[i] = (int32_t)(tfm_tanhf(y) * 8388607.f);
+            o[i] = (int32_t)(tfm_tanhf(y * 2.5f) * 8388607.f);   /* +8 dB in uscita, il tanh fa da limitatore morbido */
         }
     }
 }

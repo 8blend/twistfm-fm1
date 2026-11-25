@@ -548,7 +548,14 @@ void tfm_ui_encoder(tfm_ui *u, unsigned enc, int delta)
     if (enc == TFM_ENC_SELECT) {
         /* SELECT sfoglia le pagine; in ENV, che ha una pagina, sceglie l'operatore */
         if (u->section == S_SAVE) u->save_slot = (uint8_t)((u->save_slot + (delta > 0 ? 1 : TFM_USER_SLOTS - 1)) % TFM_USER_SLOTS);
-        else if (page_count[u->section] > 1) {
+        else if (u->section == S_FX) {   /* solo fra le pagine dell'effetto: TAPE <> TAPE+, REVERB <> REVERB+ */
+            unsigned pg = u->page[S_FX];
+            if (pg == 2 || pg == 3) u->page[S_FX] = (uint8_t)(pg ^ 1u);
+            else if (pg == 4 || pg == 5) u->page[S_FX] = (uint8_t)(pg == 4 ? 5 : 4);
+        } else if (u->section == S_LFO) {   /* solo fra le 3 pagine dell'LFO (o del MOD ENV) scelto */
+            unsigned pg = u->page[S_LFO], g = pg / 3 * 3;
+            u->page[S_LFO] = (uint8_t)(g + (pg - g + (delta > 0 ? 1 : 2)) % 3);
+        } else if (page_count[u->section] > 1) {
             unsigned n = page_count[u->section];
             u->page[u->section] = (uint8_t)((u->page[u->section] + (delta > 0 ? 1 : n - 1)) % n);
         }
@@ -1368,7 +1375,7 @@ static void draw_glo(tfm_ui *u)
 
 
 /* ---- effetti ---- */
-static const char *const fx_page_name[7] = { "1 DIST", "2 PHASER", "3 TAPE ECHO", "4 TAPE+", "5 REVERB", "6 REVERB+", "7 CHAIN" };
+static const char *const fx_page_name[7] = { "DISTORTION", "PHASER", "TAPE ECHO", "TAPE ECHO 2", "REVERB", "REVERB 2", "CHAIN" };
 /* slot della catena */
 static void fx_slots(const tfm_ui *u, uint8_t out[4])
 {
@@ -1417,7 +1424,6 @@ static void draw_fx(tfm_ui *u)
         }
         text(u, 6, 160, "OUTPUT", 1, DIM);
         text(u, 60, 172, "SAME EFFECT = SWAP", 1, DIM);
-        page_dots(u, 7, pg);
         footer(u, P_FX[pg]);
         return;
     }
@@ -1492,8 +1498,8 @@ static void draw_fx(tfm_ui *u)
         }
         text(u, bx + 6, by + 6, L_REV_LONG[t], 2, TEXT);
     }
-    text(u, 6, 164, "FX = NEXT EFFECT  SELECT = PAGE", 1, DIM);
-    page_dots(u, 7, pg);
+    text(u, 6, 164, pg >= 2 && pg <= 5 ? "FX = NEXT EFFECT  SELECT = MORE" : "FX = NEXT EFFECT", 1, DIM);
+    if (pg >= 2 && pg <= 5) page_dots(u, 2, (pg - 2) & 1u);   /* TAPE e REVERB: due pagine */
     footer(u, P_FX[pg]);
 }
 
@@ -1749,90 +1755,71 @@ uint32_t tfm_ui_draw(tfm_ui *u)
 }
 
 /* ------------------------------------------------------------------ */
-/* Logo retro (schermata di avvio): sole a strisce, griglia, scritta   */
-/* cromata in corsivo. Disegnato a bande di 16 righe, senza tfm_ui.    */
+/* Logo di avvio in stile anni '70 (l'epoca in cui nasce la sintesi FM): */
+/* fondo crema, quattro strisce marrone-ruggine-arancio-senape che      */
+/* ondeggiano come un'onda FM, scritta grossa con contorno e ombra.     */
+/* Disegnato a bande di 16 righe, senza tfm_ui.                         */
 /* ------------------------------------------------------------------ */
 static uint16_t rgb565(int r, int g, int b)
 {
     r = r < 0 ? 0 : r > 255 ? 255 : r; g = g < 0 ? 0 : g > 255 ? 255 : g; b = b < 0 ? 0 : b > 255 ? 255 : b;
     return (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
 }
-static int lerp(int a, int b, int t, int n) { return a + (b - a) * t / n; }
-/* la scritta: 5x7 a scala 4, inclinata; 0 fuori, 1 contorno, 2 lettera */
-#define LOGO_S 4
-#define LOGO_X0 34
-#define LOGO_Y0 92
+#define LOGO_S 5
+#define LOGO_X0 18
+#define LOGO_Y0 52
+/* 0 fuori, 1 ombra, 2 contorno, 3 lettera */
 static int logo_text_at(int x, int y)
 {
     static const char word[] = "TWISTER";
     int best = 0;
-    for (int dy = -2; dy <= 2; dy++)
-        for (int dx = -2; dx <= 2; dx++) {
-            int yy = y + dy - LOGO_Y0;
-            if (yy < 0 || yy >= 7 * LOGO_S) continue;
-            int xx = x + dx - LOGO_X0 + (7 * LOGO_S - yy) / 3;   /* corsivo */
-            if (xx < 0) continue;
+    for (int dy = -3; dy <= 3; dy++)
+        for (int dx = -3; dx <= 3; dx++) {
+            int yy = y + dy - LOGO_Y0, xx = x + dx - LOGO_X0;
+            if (yy < 0 || yy >= 7 * LOGO_S || xx < 0) continue;
             int ch = xx / (6 * LOGO_S), col = (xx % (6 * LOGO_S)) / LOGO_S, row = yy / LOGO_S;
-            if (ch >= 7 || col >= 5) continue;
-            if (glyph(word[ch])[col] & (1u << row)) {
-                if (!dx && !dy) return 2;
-                best = 1;
-            }
+            if (ch >= 7 || col >= 5 || !(glyph(word[ch])[col] & (1u << row))) continue;
+            if (!dx && !dy) return 3;
+            if (dx >= -2 && dx <= 2 && dy >= -2 && dy <= 2) { if (best < 2) best = 2; }
+            else if (dx <= -1 && dy <= -1) { if (best < 1) best = 1; }   /* ombra in basso a destra */
         }
     return best;
 }
+static void logo_small_text(uint16_t *px, unsigned y0, int y, const char *s, uint16_t c)
+{
+    int w = (int)tfm_strlen(s) * 6, sx = (240 - w) / 2;
+    for (int i = 0; s[i]; i++) {
+        const uint8_t *g = glyph(s[i]);
+        for (int col = 0; col < 5; col++)
+            for (int row = 0; row < 7; row++)
+                if (g[col] & (1u << row)) {
+                    int yy = y + row - (int)y0;
+                    if (yy >= 0 && yy < 16) px[yy * 240 + sx + i * 6 + col] = PXC(c);
+                }
+    }
+}
 void tfm_logo_band(uint16_t *px, unsigned y0)
 {
-    const int hz = 150, cx = 120, cy = 128, rad = 64;
+    static const uint8_t stripe[4][3] = { { 96, 52, 28 }, { 184, 76, 32 }, { 232, 136, 40 }, { 236, 190, 70 } };
     for (int r = 0; r < 16; r++) {
         int y = (int)y0 + r;
         for (int x = 0; x < 240; x++) {
-            uint16_t c;
-            if (y < hz) {   /* cielo: blu notte che scalda verso l'orizzonte */
-                c = rgb565(lerp(8, 70, y, hz), lerp(4, 10, y, hz), lerp(30, 90, y, hz));
-                { unsigned h = (unsigned)(x * 73856093) ^ (unsigned)(y * 19349663); h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
-                  if ((h & 1023u) < 4u && y < 100) c = rgb565(210, 210, 255); }   /* stelle */
-                int dx = x - cx, dy = y - cy;
-                if (dx * dx + dy * dy <= rad * rad) {   /* sole: dal giallo al magenta, a strisce sotto */
-                    int t = y - (cy - rad);
-                    int band = (y - (cy - 10)) ;
-                    int gap = band > 0 && (band % 9) < 1 + band / 9;
-                    if (!gap) c = rgb565(255, lerp(230, 40, t, 2 * rad), lerp(60, 160, t, 2 * rad));
-                }
-            } else {        /* terra: viola scuro con la griglia in prospettiva */
-                int d = y - hz + 1;
-                c = rgb565(20, 0, 40);
-                int line = 0;
-                for (int k = 1; k < 12; k++) { int yy = hz + k * k * 2 / 3; if (y == yy) line = 1; }
-                for (int k = -12; k <= 12; k++) {   /* linee verso il punto di fuga */
-                    int lx = cx + k * 20 * d / 16;
-                    if (x == lx || (k && x == lx + (k > 0 ? -1 : 1) && d > 40)) line = 1;
-                }
-                if (line) c = rgb565(255, 40, lerp(200, 140, d, 90));
-            }
-            int t = logo_text_at(x, y);
-            if (t == 1) c = rgb565(10, 0, 30);
-            else if (t == 2) {   /* cromato: bianco in alto, azzurro, linea d'orizzonte, blu scuro in basso */
-                int yy = y - LOGO_Y0;
-                if (yy < 11) c = rgb565(255, 255, lerp(255, 210, yy, 11));
-                else if (yy < 14) c = rgb565(120, 220, 255);
-                else if (yy < 15) c = rgb565(255, 255, 255);
-                else c = rgb565(lerp(40, 160, yy - 15, 13), lerp(60, 30, yy - 15, 13), lerp(160, 220, yy - 15, 13));
-            }
+            uint16_t c = rgb565(246, 234, 206);   /* carta crema */
+            /* le strisce: il loro centro segue un'onda FM, sin(a + I sin(b)) */
+            float t = (float)x * (1.f / 240.f);
+            float wave = sin1(t * 2.f + 0.22f * sin1(t * 1.f + 0.1f));
+            int base = 160 + (int)(wave * 16.f);
+            int k = (y - base + 24) / 12;
+            if (y - base + 24 >= 0 && k >= 0 && k < 4 && ((y - base + 24) % 12) < 10)
+                c = rgb565(stripe[k][0], stripe[k][1], stripe[k][2]);
+            int tx = logo_text_at(x, y);
+            if (tx == 1) c = rgb565(232, 136, 40);
+            else if (tx == 2) c = rgb565(70, 36, 20);
+            else if (tx == 3) c = rgb565(250, 228, 170);
             px[r * 240 + x] = PXC(c);
         }
     }
-    if (y0 + 16 > 200 && y0 < 216) {   /* sottotitolo */
-        static const char sub[] = "FM SYNTHESIZER";
-        int w = 14 * 6 * 1, sx = (240 - w) / 2;
-        for (int i = 0; sub[i]; i++) {
-            const uint8_t *g = glyph(sub[i]);
-            for (int col = 0; col < 5; col++)
-                for (int row = 0; row < 7; row++)
-                    if (g[col] & (1u << row)) {
-                        int yy = 204 + row - (int)y0;
-                        if (yy >= 0 && yy < 16) px[yy * 240 + sx + i * 6 + col] = PXC(rgb565(80, 230, 255));
-                    }
-        }
-    }
+    logo_small_text(px, y0, 30, "FREQUENCY MODULATION", rgb565(110, 60, 30));
+    logo_small_text(px, y0, 104, "SYNTHESIZER", rgb565(184, 76, 32));
+    logo_small_text(px, y0, 214, "8 VOICES  -  OPL3", rgb565(110, 60, 30));
 }
