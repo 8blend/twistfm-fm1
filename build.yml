@@ -1,0 +1,85 @@
+# Compila il firmware per l'M-VAVE FM-1 sui server di GitHub (Linux).
+# Si avvia da solo a ogni modifica, oppure a mano: Actions -> build -> Run workflow.
+# Il risultato (il file .fwsc da installare) si scarica dalla pagina dell'esecuzione, sotto "Artifacts".
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  FM1_BASE_REPO: https://github.com/charlesvestal/fm1-base
+  FM1_BASE_COMMIT: 2bb8e74f2962475eeeefd5179420bd8d73a3da6c   # la versione di fm1-base su cui l'app e' scritta
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Scarica questo progetto
+        uses: actions/checkout@v4
+
+      - name: Scarica fm1-base (piattaforma) e felucca-bsp (hardware)
+        run: |
+          git clone "$FM1_BASE_REPO" fm1-base
+          cd fm1-base
+          git checkout "$FM1_BASE_COMMIT"
+          git submodule update --init --recursive
+
+      - name: Strumenti di sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil xz-utils curl
+
+      - name: Compilatore JieLi e file dell'SDK AC79
+        run: |
+          cd fm1-base
+          tools/setup_toolchain.sh --only jieli,ac79-sdk
+
+      - name: Compila il firmware
+        shell: bash
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          python3 fm1-base/tools/build.py app --release "$VERSION" 2>&1 | tee build-log.txt
+          ls -la app/build
+
+      - name: Crea il sito con l'installer web
+        shell: bash
+        run: |
+          python3 fm1-base/tools/make_site.py app "app/build/twistfm-$VERSION.fwsc" "$VERSION" site
+          ls -la site site/install
+
+      - name: Prepara i file da scaricare
+        if: always()
+        run: |
+          mkdir -p out
+          cp app/build/*.fwsc out/ 2>/dev/null || true
+          cp build-log.txt out/ 2>/dev/null || true
+          cp app/build/firmware.json out/ 2>/dev/null || true
+
+      - name: Firmware da scaricare
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twistfm-firmware
+          path: out/
+
+      - name: Prepara la pubblicazione del sito
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # pubblica il sito (installer web) su https://8blend.github.io/twistfm-fm1/
+  # serve una volta sola: Settings -> Pages -> Source: GitHub Actions
+  pages:
+    needs: firmware
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

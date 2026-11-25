@@ -1,0 +1,21 @@
+# Firmware "stile TwistFM" per M-VAVE FM-1, su fm1-base (tools/build.py)
+name = "TWISTFM"
+id_prefix = "FM-1_73"              # identità del pacchetto: sviluppo FM-1_7300, release FM-1_73XXYYZZ
+usb_manufacturer = "8blend"
+usb_product = "TWISTFM-STYLE FM-1"
+o2 = ["src/tfm_engine.c", "src/tfm_fx.c", "src/tfm_ui.c"]   # motore, effetti e schermo compilati a -O2
+o2_cflags = ["-DTFM_UI_BYTESWAP", "-DTFM_UI_NO_FRAMEBUFFER"]
+words = "words.tsv"
+ble = false                        # Bluetooth spento: la memoria resta al suono
+companion = false
+# per il sito e firmware.json
+tagline = "an FM synth inspired by the OPL3 sound of the TwistFM"
+licence = "GPL-3.0-only"
+repo = "https://github.com/8blend/twistfm-fm1"
+credits = "Built on fm1-base and felucca-bsp."
+author = "8blend"
+description = "Eight-voice OPL3-style FM synthesizer with per-voice MS20/LIQUID filters and an effects chain, for the M-VAVE FM-1. Unofficial, inspired by the Twisted Electrons TWISTfm."
+tags = ["synth", "fm"]
+install = "https://8blend.github.io/twistfm-fm1/install/"
+site = "https://8blend.github.io/twistfm-fm1/"
+screenshot = "docs/img/screen-home.png"

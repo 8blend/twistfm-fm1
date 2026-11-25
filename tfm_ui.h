@@ -1,0 +1,47 @@
+/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* Interfaccia utente "stile TWISTfm" sui comandi reali dell'FM-1:
+ * schermo 240x240 RGB565, encoder SELECT/ALGORITHM/K1-K4/PRESETS, 14 tasti,
+ * 27 tasti musicali (da FA a SOL). Lo stesso codice gira nel simulatore e,
+ * nella fase 3, sul dispositivo. Disegna solo quando qualcosa cambia. */
+#ifndef TFM_UI_H
+#define TFM_UI_H
+#include <stdint.h>
+#include "tfm_engine.h"
+
+#define TFM_SCREEN_W 240
+#define TFM_SCREEN_H 240
+
+/* Indici come nell'SDK FM-1 (fm1_input.h / Simulator.js). */
+enum { TFM_ENC_SELECT, TFM_ENC_ALGORITHM, TFM_ENC_K1, TFM_ENC_K2, TFM_ENC_K3, TFM_ENC_K4, TFM_ENC_PRESETS };
+enum { TFM_BTN_OCT_DOWN, TFM_BTN_OCT_UP, TFM_BTN_FX, TFM_BTN_SEL, TFM_BTN_ENV, TFM_BTN_LFO, TFM_BTN_EDIT,
+       TFM_BTN_GLO, TFM_BTN_HOME, TFM_BTN_SAVE, TFM_BTN_ARP, TFM_BTN_SEQ, TFM_BTN_PLAY, TFM_BTN_REC, TFM_BTN_COUNT };
+#define TFM_KEYS 27
+
+/* Eventi prodotti dall'interfaccia per il motore audio. */
+enum { TFM_EV_NONE, TFM_EV_NOTE_ON, TFM_EV_NOTE_OFF, TFM_EV_PARAM, TFM_EV_PATCH };
+typedef struct { uint8_t type, a, b; } tfm_event;
+
+typedef struct tfm_ui tfm_ui;
+/* trasferisce un rettangolo di pixel allo schermo (sul dispositivo: lcd_blit) */
+typedef void (*tfm_blit_fn)(unsigned x, unsigned y, unsigned w, unsigned h, const uint16_t *px);
+void tfm_ui_set_blit(tfm_ui *u, tfm_blit_fn fn);
+unsigned tfm_ui_size(void);
+tfm_ui *tfm_ui_init(void *memory);
+void tfm_ui_encoder(tfm_ui *u, unsigned encoder, int delta);
+void tfm_ui_button(tfm_ui *u, unsigned button, int down);
+void tfm_ui_key(tfm_ui *u, unsigned key, int down);
+void tfm_ui_key_vel(tfm_ui *u, unsigned key, int down, unsigned velocity);
+/* Nota MIDI esterna: aggiorna solo i LED, il suono va direttamente al motore. */
+int tfm_ui_next_event(tfm_ui *u, tfm_event *out);
+const tfm_patch *tfm_ui_patch(const tfm_ui *u);
+/* Ridisegna se serve; restituisce 0 se nulla e' cambiato, altrimenti il
+ * rettangolo modificato come x | y<<8 | (w-1)<<16 | (h-1)<<24. */
+uint32_t tfm_ui_draw(tfm_ui *u);
+#ifndef TFM_UI_NO_FRAMEBUFFER
+const uint16_t *tfm_ui_framebuffer(const tfm_ui *u);
+#endif
+/* LED: bit 0..13 tasti funzione, 14..40 tasti musicali. */
+uint64_t tfm_ui_leds(const tfm_ui *u);
+unsigned tfm_ui_preset_count(void);
+const char *tfm_ui_preset_name(unsigned index);
+#endif
