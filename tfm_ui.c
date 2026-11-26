@@ -297,7 +297,7 @@ static void load_preset(tfm_ui *u, unsigned i)
         tfm_seq_default(&u->seq);
         if (tfm_presets[i].seq && tfm_presets[i].seq <= TFM_PATTERN_COUNT) {   /* la sequenza del preset */
             const tfm_pattern *pt = &tfm_patterns[tfm_presets[i].seq - 1];
-            for (unsigned k = 0; k < 16; k++) { u->seq.note[k] = pt->note[k]; u->seq.gate[k] = pt->gate[k]; }
+            for (unsigned k = 0; k < 32; k++) { u->seq.note[k] = pt->note[k]; u->seq.gate[k] = pt->gate[k]; }
         }
     } else {
         const user_preset *s = &u->user[i - TFM_PRESET_COUNT];

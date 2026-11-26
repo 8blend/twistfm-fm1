@@ -79,14 +79,15 @@ enum {
     TFM_P_SCALE, TFM_P_ROOT, TFM_P_CHORD,
     /* portamento acceso (con il tempo TFM_P_GLIDE), pitch bend 1..24 semitoni, eco a tempo (TFM_DLY_DIVS) */
     TFM_P_PORTA, TFM_P_BEND, TFM_P_DLY_SYNC, TFM_P_DLY_DIV,
-    /* LFO a tempo: acceso e divisione (TFM_DIVS) per ognuno dei 3 LFO */
+    /* LFO a tempo: acceso e divisione (TFM_LFO_DIVS) per ognuno dei 3 LFO */
     TFM_P_LFO1_SYNC, TFM_P_LFO2_SYNC, TFM_P_LFO3_SYNC, TFM_P_LFO1_DIV, TFM_P_LFO2_DIV, TFM_P_LFO3_DIV,
     TFM_P_COUNT
 };
 
 #define TFM_FLT_MODES 15
 #define TFM_ARP_MODES 10   /* UP DOWN UPDN RAND WALK CONV DIVG PLAY STUT ALL */
-#define TFM_DIVS 12        /* 4BAR 2BAR 1BAR 1/2 1/3 1/4 1/6 1/8 1/12 1/16 1/24 1/32 */
+#define TFM_DIVS 12        /* 4BAR 2BAR 1BAR 1/2 1/2T 1/4 1/4T 1/8 1/8T 1/16 1/16T 1/32 */
+#define TFM_LFO_DIVS 17    /* LFO a tempo: anche le puntate (D) e le terzine (T) */
 #define TFM_SCALES 22
 #define TFM_CHORDS 12
 #define TFM_SEQ_STEPS 128
@@ -96,6 +97,8 @@ enum { TFM_GATE_REST, TFM_GATE_TRIG, TFM_GATE_TIE };
 typedef struct { uint8_t note[TFM_SEQ_STEPS]; uint8_t gate[TFM_SEQ_STEPS]; } tfm_seq;
 extern const char *const tfm_div_names[TFM_DIVS];
 extern const float tfm_div_beats[TFM_DIVS];
+extern const char *const tfm_lfo_div_names[TFM_LFO_DIVS];
+extern const float tfm_lfo_div_beats[TFM_LFO_DIVS];
 extern const char *const tfm_arp_names[TFM_ARP_MODES];
 extern const char *const tfm_dly_div_names[TFM_DLY_DIVS];
 extern const float tfm_dly_div_beats[TFM_DLY_DIVS];

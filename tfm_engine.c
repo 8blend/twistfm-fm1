@@ -508,7 +508,7 @@ void tfm_patch_init(tfm_patch *patch)
     p[TFM_P_ARP_RATE] = 9; p[TFM_P_ARP_GATE] = 80;
     p[TFM_P_SEQ_LEN] = 15; p[TFM_P_SEQ_RATE] = 9; p[TFM_P_SEQ_GATE] = 90;
     p[TFM_P_GLIDE] = 40; p[TFM_P_BEND] = 2; p[TFM_P_DLY_DIV] = 7;
-    p[TFM_P_LFO1_DIV] = 5; p[TFM_P_LFO2_DIV] = 7; p[TFM_P_LFO3_DIV] = 3;   /* 1/4, 1/8, 1/2 */   /* portamento spento ma pronto; eco 1/8 puntato */
+    p[TFM_P_LFO1_DIV] = 7; p[TFM_P_LFO2_DIV] = 10; p[TFM_P_LFO3_DIV] = 4;   /* 1/4, 1/8, 1/2 */   /* portamento spento ma pronto; eco 1/8 puntato */
 }
 
 static void player_reset(tfm_engine *e);
@@ -794,7 +794,11 @@ void tfm_all_notes_off(tfm_engine *e)
 
 /* =================== fase 5: scale, accordi, arpeggiatore, sequencer =================== */
 
-const char *const tfm_div_names[TFM_DIVS] = { "4BAR", "2BAR", "1BAR", "1/2", "1/3", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32" };
+const char *const tfm_div_names[TFM_DIVS] = { "4BAR", "2BAR", "1BAR", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32" };
+const char *const tfm_lfo_div_names[TFM_LFO_DIVS] = { "4BAR", "2BAR", "1BAR", "1/2D", "1/2", "1/2T", "1/4D", "1/4", "1/4T",
+                                                      "1/8D", "1/8", "1/8T", "1/16D", "1/16", "1/16T", "1/32", "1/32T" };
+const float tfm_lfo_div_beats[TFM_LFO_DIVS] = { 16.f, 8.f, 4.f, 3.f, 2.f, 4.f / 3.f, 1.5f, 1.f, 2.f / 3.f,
+                                                0.75f, 0.5f, 1.f / 3.f, 0.375f, 0.25f, 1.f / 6.f, 0.125f, 1.f / 12.f };
 const float tfm_div_beats[TFM_DIVS] = { 16.f, 8.f, 4.f, 2.f, 4.f / 3.f, 1.f, 2.f / 3.f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f };
 const char *const tfm_dly_div_names[TFM_DLY_DIVS] = { "1/32", "1/16T", "1/16", "1/8T", "1/16D", "1/8", "1/4T", "1/8D", "1/4", "1/4D", "1/2" };
 const float tfm_dly_div_beats[TFM_DLY_DIVS] = { 0.125f, 1.f / 6.f, 0.25f, 1.f / 3.f, 0.375f, 0.5f, 2.f / 3.f, 0.75f, 1.f, 1.5f, 2.f };
@@ -1329,7 +1333,7 @@ void tfm_render(tfm_engine *e, int32_t *output, unsigned frames)
                 if (p[TFM_LFO_LINK(k, i)] && link_amt(p, TFM_LFO_LINK(k, i))) used = 1;
             float hz = lfo_hz(q[0]);
             if (p[TFM_P_LFO1_SYNC + k])   /* a tempo: una divisione della nota da 1/4 */
-                hz = (float)tfm_bpm_now(e) * (1.f / 60.f) / tfm_div_beats[p[TFM_P_LFO1_DIV + k] % TFM_DIVS];
+                hz = (float)tfm_bpm_now(e) * (1.f / 60.f) / tfm_lfo_div_beats[p[TFM_P_LFO1_DIV + k] % TFM_LFO_DIVS];
             e->lfo_ph[k] += hz * dt;
             if (e->lfo_ph[k] >= 1.f) { e->lfo_ph[k] -= (float)(int)e->lfo_ph[k]; e->lfo_hold[k] = rnd_bipolar(e); }
             if (!used) continue;
