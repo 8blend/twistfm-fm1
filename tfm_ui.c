@@ -459,8 +459,8 @@ static void turn_virtual(tfm_ui *u, unsigned id, int delta)
     case V_LFORATE: case V_LFORATE + 1: case V_LFORATE + 2: {   /* Hz liberi, o divisione se a tempo */
         unsigned k = id - V_LFORATE;
         if (u->patch.p[TFM_P_LFO1_SYNC + k]) {
-            int d = (int)(u->patch.p[TFM_P_LFO1_DIV + k] % TFM_DIVS) + (delta > 0 ? 1 : -1);
-            set_param(u, (int)(TFM_P_LFO1_DIV + k), d < 0 ? 0 : d >= TFM_DIVS ? TFM_DIVS - 1 : d);
+            int d = (int)(u->patch.p[TFM_P_LFO1_DIV + k] % TFM_LFO_DIVS) + (delta > 0 ? 1 : -1);
+            set_param(u, (int)(TFM_P_LFO1_DIV + k), d < 0 ? 0 : d >= TFM_LFO_DIVS ? TFM_LFO_DIVS - 1 : d);
         } else set_param(u, (int)TFM_LFO_BASE(k), u->patch.p[TFM_LFO_BASE(k)] + delta);
         break;
     }
@@ -540,7 +540,7 @@ static void value_text(const tfm_ui *u, const pdesc *d, char *out)
         case V_CLKOUT: tfm_strcpy(out, u->set.clk_out ? "ON" : "OFF"); break;
         case V_LFORATE: case V_LFORATE + 1: case V_LFORATE + 2: {
             unsigned k = (unsigned)id - V_LFORATE;
-            if (u->patch.p[TFM_P_LFO1_SYNC + k]) tfm_strcpy(out, tfm_div_names[u->patch.p[TFM_P_LFO1_DIV + k] % TFM_DIVS]);
+            if (u->patch.p[TFM_P_LFO1_SYNC + k]) tfm_strcpy(out, tfm_lfo_div_names[u->patch.p[TFM_P_LFO1_DIV + k] % TFM_LFO_DIVS]);
             else num_text(out, u->patch.p[TFM_LFO_BASE(k)]);
         } break;
         case V_LFORUN: case V_LFORUN + 1: case V_LFORUN + 2: {
@@ -1284,7 +1284,7 @@ static void draw_lfo(tfm_ui *u)
             char hz[12];
             int syn = p[TFM_P_LFO1_SYNC + k] != 0;
             if (syn) {
-                int x = text(u, 6, 140, tfm_div_names[p[TFM_P_LFO1_DIV + k] % TFM_DIVS], 2, TEXT);
+                int x = text(u, 6, 140, tfm_lfo_div_names[p[TFM_P_LFO1_DIV + k] % TFM_LFO_DIVS], 2, TEXT);
                 text(u, x + 4, 147, "SYNC", 1, GREEN);
             } else {
                 fmt_fixed(hz, lfo_rate_hz(q[0]), 2);
